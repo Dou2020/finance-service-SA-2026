@@ -1,0 +1,94 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: finance-service
+  datasource:
+    # Dentro del compose: finance-db:5432. Con mvn desde el host: localhost:5438,
+    # el puerto publicado (el 5432 del host suele ser un postgres local).
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5438}/finance_db
+    username: ${DB_USER:finance_svc}
+    password: ${DB_PASSWORD:finance_svc}
+  jpa:
+    # El esquema lo define Flyway; Hibernate solo verifica que las entidades coincidan.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  web:
+    # Locale fijo: los mensajes de Bean Validation salen en español sin depender
+    # del Accept-Language del cliente.
+    locale: es
+    locale-resolver: fixed
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:transporte}
+    password: ${RABBITMQ_PASSWORD:transporte}
+    # finance no publica eventos, pero ReprocesadorDlq espera la confirmación del broker antes de
+    # sacar cada mensaje de la DLQ (waitForConfirmsOrDie): sin confirms en el canal, falla.
+    publisher-confirm-type: simple
+    listener:
+      simple:
+        # Agotados los reintentos, el mensaje va a la DLQ (dead-letter de la cola), no
+        # de vuelta a la cola.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 5          # 1 intento + 4 reintentos: 1 s, 2 s, 4 s, 8 s
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 8s
+
+# Servicios a los que llama por REST (README, "Comunicación entre servicios").
+clientes:
+  fleet:
+    url: ${FLEET_URL:http://localhost:8082}   # S6: el bus de un gasto de taller
+
+# Modelo: PRACTICA_5 (order-service). Timeouts del cliente (ClientesConfig): conexión 1 s, respuesta 2 s.
+resilience4j:
+  circuitbreaker:
+    # Circuito afuera y retry adentro: el circuito ve una operación por llamada, con todos sus
+    # reintentos. Con el retry afuera, cada reintento contaría como un fallo aparte.
+    circuitBreakerAspectOrder: 1
+    configs:
+      default:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        # Sin mínimo, una sola falla en la primera llamada ya es 100 % y abre.
+        minimumNumberOfCalls: 5
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        # Con true, fleet caído pondría en rojo el health de finance y el healthcheck de Compose
+        # marcaría a finance como caído: la cascada que el circuito existe para cortar.
+        registerHealthIndicator: false
+        # Un 4xx (bus de otra sucursal, inexistente) es la respuesta de un servicio sano: no
+        # cuenta como fallo ni se reintenta.
+        ignoreExceptions:
+          - gt.cunoc.sa.finance.api.error.ErrorDeNegocio
+    instances:
+      fleet:
+        baseConfig: default
+  retry:
+    retryAspectOrder: 2
+    configs:
+      default:
+        # Solo lectura (S6 consulta el bus): reintentar es seguro.
+        maxAttempts: 2
+        waitDuration: 300ms
+        ignoreExceptions:
+          - gt.cunoc.sa.finance.api.error.ErrorDeNegocio
+    instances:
+      fleet:
+        baseConfig: default
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    # El X-Correlation-Id (CorrelationIdFilter) en cada línea, para seguir un flujo entre servicios.
+    level: "%5p [%X{correlationId:-}]"
