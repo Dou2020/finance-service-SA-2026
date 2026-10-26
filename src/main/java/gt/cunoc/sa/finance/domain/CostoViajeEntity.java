@@ -20,27 +20,28 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "costo_viaje")
-public class CostoViajeEntity extends ConIdAsignado {
+public class CostoViajeEntity extends ConIdAsignado<String> {
 
     /** En un viaje de alquiler el chofer cobra 15 % sobre su salario base (enunciado). */
     static final BigDecimal RECARGO_ALQUILER = new BigDecimal("1.15");
 
+    /** viaje_id, bus_id y chofer_id son ids de trip y fleet como texto (V3): ellos numeran con bigserial. */
     @Id
-    @Column(name = "viaje_id")
-    private UUID viajeId;
+    @Column(name = "viaje_id", length = 64)
+    private String viajeId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_viaje", nullable = false, length = 10)
     private TipoViaje tipoViaje;
 
-    @Column(name = "bus_id", nullable = false)
-    private UUID busId;
+    @Column(name = "bus_id", nullable = false, length = 64)
+    private String busId;
 
-    @Column(name = "placa_bus", nullable = false, length = 10)
+    @Column(name = "placa_bus", nullable = false, length = 20)
     private String placaBus;
 
-    @Column(name = "chofer_id", nullable = false)
-    private UUID choferId;
+    @Column(name = "chofer_id", nullable = false, length = 64)
+    private String choferId;
 
     @Column(name = "sucursal_id", nullable = false)
     private UUID sucursalId;
@@ -73,7 +74,7 @@ public class CostoViajeEntity extends ConIdAsignado {
     }
 
     /** Lo que trae ViajeFinalizado, ya validado. */
-    public record Viaje(UUID viajeId, TipoViaje tipo, UUID busId, String placa, UUID choferId, UUID sucursalId,
+    public record Viaje(String viajeId, TipoViaje tipo, String busId, String placa, String choferId, UUID sucursalId,
             LocalDate fechaLlegada, int kmInicial, int kmFinal, BigDecimal combustible, BigDecimal salarioBase) {
     }
 
@@ -115,7 +116,7 @@ public class CostoViajeEntity extends ConIdAsignado {
     }
 
     @Override
-    public UUID getId() {
+    public String getId() {
         return viajeId;
     }
 
@@ -123,7 +124,7 @@ public class CostoViajeEntity extends ConIdAsignado {
         return tipoViaje;
     }
 
-    public UUID getBusId() {
+    public String getBusId() {
         return busId;
     }
 
@@ -131,7 +132,7 @@ public class CostoViajeEntity extends ConIdAsignado {
         return placaBus;
     }
 
-    public UUID getChoferId() {
+    public String getChoferId() {
         return choferId;
     }
 

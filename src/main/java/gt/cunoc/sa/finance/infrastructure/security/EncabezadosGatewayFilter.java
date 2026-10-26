@@ -44,7 +44,7 @@ public class EncabezadosGatewayFilter extends OncePerRequestFilter {
                 UsuarioActual usuario = new UsuarioActual(
                         UUID.fromString(usuarioId),
                         uuidOpcional(request.getHeader(SUCURSAL)),
-                        uuidOpcional(request.getHeader(CHOFER)),
+                        textoOpcional(request.getHeader(CHOFER)),
                         roles(request.getHeader(ROLES)));
                 List<SimpleGrantedAuthority> autoridades = usuario.roles().stream()
                         .map(rol -> new SimpleGrantedAuthority("ROLE_" + rol))
@@ -62,6 +62,11 @@ public class EncabezadosGatewayFilter extends OncePerRequestFilter {
 
     private static UUID uuidOpcional(String valor) {
         return valor == null || valor.isBlank() ? null : UUID.fromString(valor);
+    }
+
+    /** El chofer es un id de fleet ("3"), no un UUID: si se leyera como UUID, el chofer quedaría anónimo. */
+    private static String textoOpcional(String valor) {
+        return valor == null || valor.isBlank() ? null : valor.strip();
     }
 
     private static Set<String> roles(String valor) {

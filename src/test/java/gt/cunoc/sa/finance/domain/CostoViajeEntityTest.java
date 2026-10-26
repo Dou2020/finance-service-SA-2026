@@ -29,9 +29,8 @@ class CostoViajeEntityTest {
 
     @Test
     void unKmFinalMenorQueElInicialNoSeRegistra() {
-        CostoViajeEntity.Viaje viaje = new CostoViajeEntity.Viaje(UUID.randomUUID(), TipoViaje.REGULAR,
-                UUID.randomUUID(), "P123ABC", UUID.randomUUID(), UUID.randomUUID(), LocalDate.of(2026, 10, 1), 1000,
-                900, BigDecimal.TEN, BigDecimal.TEN);
+        CostoViajeEntity.Viaje viaje = new CostoViajeEntity.Viaje("101", TipoViaje.REGULAR, "7", "P123ABC", "3",
+                UUID.randomUUID(), LocalDate.of(2026, 10, 1), 1000, 900, BigDecimal.TEN, BigDecimal.TEN);
 
         assertThatThrownBy(() -> CostoViajeEntity.calcular(viaje, null, Instant.now()))
                 .isInstanceOf(IllegalArgumentException.class);

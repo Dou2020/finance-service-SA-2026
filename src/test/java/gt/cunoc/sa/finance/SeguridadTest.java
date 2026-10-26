@@ -47,6 +47,16 @@ class SeguridadTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /**
+     * X-Chofer-Id es el id del chofer en fleet ("3"), no un UUID: el chofer queda autenticado y lo
+     * frena su rol (403). Leído como UUID, quedaría anónimo y saldría 401.
+     */
+    @Test
+    void unChoferConIdNumericoEstaAutenticadoYSuRolNoAlcanza() throws Exception {
+        mvc.perform(get("/api/gastos-taller").with(Escenario.como(Escenario.chofer("3"))))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void healthEsPublico() throws Exception {
         mvc.perform(get("/actuator/health")).andExpect(status().isOk());

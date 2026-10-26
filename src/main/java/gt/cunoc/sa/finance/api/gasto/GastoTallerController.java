@@ -50,10 +50,10 @@ public class GastoTallerController {
 
     @GetMapping
     @Operation(summary = "Lista paginada, del servicio más reciente",
-            description = "SYS_ADMIN (todas o una sucursal) y BRANCH_ADMIN (la suya). Filtros por bus y por fecha "
-                    + "del servicio")
+            description = "SYS_ADMIN (todas o una sucursal) y BRANCH_ADMIN (la suya). Filtros por bus (el id de "
+                    + "fleet, como texto) y por fecha del servicio")
     public Page<ResumenGastoResponse> listar(@RequestParam(required = false) UUID sucursalId,
-            @RequestParam(required = false) UUID busId, @RequestParam(required = false) LocalDate desde,
+            @RequestParam(required = false) String busId, @RequestParam(required = false) LocalDate desde,
             @RequestParam(required = false) LocalDate hasta,
             @PageableDefault(size = 20, sort = { "fechaServicio", "creadoEn" }, direction = Sort.Direction.DESC)
             Pageable pagina, @AuthenticationPrincipal UsuarioActual actual) {

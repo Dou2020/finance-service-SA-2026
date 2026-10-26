@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,8 @@ class ReportesIT {
     UUID avila;
     UUID barberena;
     Bus busAvila;
+    Bus busBarberena;
+    String ventaBarberena;
     UUID busDelViaje;
     String frenos;
     String llantas;
@@ -63,7 +66,8 @@ class ReportesIT {
     /**
      * Ávila: boletos 225 (otra venta de 100 se anula y una de 50 es de octubre), alquiler 1800, un
      * viaje de 250 km (combustible 850.75, depreciación 375, salario 300) y dos gastos de taller (mano de
-     * obra 350 + 100 en Frenos, repuestos 1200 en Llantas). Barberena: boletos 300 y repuestos 80.
+     * obra 350 + 100 en Frenos, repuestos 1200 en Llantas). Barberena: boletos 300 y repuestos 80, con
+     * los ids numéricos de sales y fleet (V3); Ávila, con UUID en texto.
      */
     @BeforeAll
     void cargarEscenario() throws Exception {
@@ -72,7 +76,9 @@ class ReportesIT {
         avila = escenario.sucursal("Ávila " + codigo);
         barberena = escenario.sucursal("Barberena " + codigo);
         busAvila = escenario.bus(avila);
-        Bus busBarberena = escenario.bus(barberena);
+        long numero = ThreadLocalRandom.current().nextLong(1_000_000, 1_000_000_000L);
+        busBarberena = escenario.bus(barberena, String.valueOf(numero));
+        ventaBarberena = String.valueOf(numero + 1);
         int categoriaFrenos = escenario.categoria();
         int categoriaLlantas = escenario.categoria();
         frenos = jdbc.queryForObject("select nombre from categoria_gasto where id = ?", String.class, categoriaFrenos);
@@ -85,7 +91,7 @@ class ReportesIT {
         eventos.add(vender(UUID.randomUUID(), avila, "225.00", "2026-09-05"));
         eventos.add(vender(anulada, avila, "100.00", "2026-09-06"));
         eventos.add(vender(UUID.randomUUID(), avila, "50.00", "2026-10-02"));
-        eventos.add(vender(UUID.randomUUID(), barberena, "300.00", "2026-09-08"));
+        eventos.add(vender(ventaBarberena, barberena, "300.00", "2026-09-08"));
         UUID alquiler = UUID.randomUUID();
         eventos.add(publicador.publicar(TiposEvento.ALQUILER_PAGADO, alquiler.toString(), 3, Map.of("alquilerId",
                 alquiler, "sucursalId", avila, "nombre", "Ana López", "monto", "1800.00", "fechaPago", "2026-09-07")));
@@ -210,6 +216,18 @@ class ReportesIT {
                 .andExpect(jsonPath("$.tarifaVigente").exists());
     }
 
+    /** Los ids de sales y fleet salen en los reportes como el texto que llegó. */
+    @Test
+    void losIdsNumericosDeSalesYFleetSalenComoTexto() throws Exception {
+        reporte("ingresos", SEPTIEMBRE + "&sucursalId=" + barberena, Escenario.sysAdmin())
+                .andExpect(jsonPath("$.sucursales[0].filas[0].referenciaId").value(ventaBarberena));
+        reporte("taller-por-bus", SEPTIEMBRE + "&sucursalId=" + barberena, Escenario.sysAdmin())
+                .andExpect(jsonPath("$.buses[0].busId").value(busBarberena.id()));
+        reporte("taller-por-categoria", SEPTIEMBRE + "&busId=" + busBarberena.id(), Escenario.sysAdmin())
+                .andExpect(jsonPath("$.busId").value(busBarberena.id()))
+                .andExpect(jsonPath("$.granTotal").value(80.00));
+    }
+
     @Test
     void unAdminDeSucursalSiempreVeLaSuya() throws Exception {
         reporte("ingresos", SEPTIEMBRE + "&sucursalId=" + barberena, Escenario.adminDe(avila))
@@ -240,12 +258,12 @@ class ReportesIT {
         return jdbc.queryForObject("select nombre from sucursal_replica where id = ?", String.class, sucursal);
     }
 
-    private UUID vender(UUID venta, UUID sucursal, String total, String fechaPago) {
+    private UUID vender(Object venta, UUID sucursal, String total, String fechaPago) {
         return publicador.publicar(TiposEvento.BOLETOS_VENDIDOS, venta.toString(), 1,
                 venta(venta, sucursal, total, fechaPago));
     }
 
-    private static Map<String, Object> venta(UUID venta, UUID sucursal, String total, String fechaPago) {
+    private static Map<String, Object> venta(Object venta, UUID sucursal, String total, String fechaPago) {
         Map<String, Object> v = new LinkedHashMap<>();
         v.put("ventaId", venta);
         v.put("sucursalId", sucursal);

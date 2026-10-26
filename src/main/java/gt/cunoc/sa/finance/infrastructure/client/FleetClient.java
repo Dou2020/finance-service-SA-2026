@@ -1,7 +1,5 @@
 package gt.cunoc.sa.finance.infrastructure.client;
 
-import java.util.UUID;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,13 +33,17 @@ public class FleetClient {
         this.errores = errores;
     }
 
-    /** Solo lee: reintentarlo es seguro. */
+    /**
+     * Solo lee: reintentarlo es seguro. busId es el id de fleet como texto ("7"); va como variable de
+     * la plantilla, así que RestClient lo codifica entero (una "/" sale como %2F) y no puede cambiar
+     * la ruta. Sin id en la respuesta tampoco se registra: es el que se guarda en el gasto.
+     */
     @CircuitBreaker(name = "fleet", fallbackMethod = "busNoDisponible")
     @Retry(name = "fleet")
-    public BusRemoto bus(UUID busId) {
+    public BusRemoto bus(String busId) {
         BusRemoto bus = errores.llamar(SERVICIO, () -> http.get().uri("/internal/buses/{id}", busId)
                 .retrieve().body(BusRemoto.class));
-        if (bus == null || bus.sucursalId() == null || bus.placa() == null) {
+        if (bus == null || bus.id() == null || bus.sucursalId() == null || bus.placa() == null) {
             throw new ServicioNoDisponibleException("fleet respondió un bus incompleto", null);
         }
         return bus;
@@ -52,7 +54,7 @@ public class FleetClient {
      * el 4xx de fleet se devuelve tal cual, o un "el bus no existe" saldría como 503.
      */
     @SuppressWarnings("unused")
-    private BusRemoto busNoDisponible(UUID busId, Throwable causa) {
+    private BusRemoto busNoDisponible(String busId, Throwable causa) {
         if (causa instanceof ErrorDeNegocio | causa instanceof ServicioNoDisponibleException) {
             throw (RuntimeException) causa;
         }

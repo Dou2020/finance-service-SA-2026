@@ -11,6 +11,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public final class Payloads {
 
+    /**
+     * El largo de las columnas de ids de fleet, trip y sales (V3). Uno más largo no cabe: sin esta
+     * validación fallaría al insertar, se reintentaría cuatro veces y terminaría igual en la DLQ.
+     */
+    public static final int LARGO_ID = 64;
+
     private Payloads() {
     }
 
@@ -27,5 +33,15 @@ public final class Payloads {
         if (!condicion) {
             throw new EventoNoProcesableException(sobre.type() + " sin " + falta);
         }
+    }
+
+    /**
+     * Un id de fleet, trip o sales: texto no vacío de hasta LARGO_ID caracteres. Se guarda tal cual
+     * llega, sin recortarlo ni pasarlo a minúsculas: el productor manda siempre el mismo texto para
+     * el mismo agregado, y normalizar aquí haría que dos ids distintos chocaran.
+     */
+    public static void exigirId(String id, Sobre sobre, String campo) {
+        exigir(id != null && !id.isBlank() && id.length() <= LARGO_ID, sobre,
+                campo + " válido (texto no vacío de hasta " + LARGO_ID + " caracteres)");
     }
 }

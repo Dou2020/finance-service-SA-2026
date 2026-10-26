@@ -50,7 +50,7 @@ class GastoTallerEntityTest {
     }
 
     private static GastoTallerEntity nuevo(List<NuevaLinea> lineas) {
-        return GastoTallerEntity.nuevo(UUID.randomUUID(), "P123ABC", UUID.randomUUID(), LocalDate.of(2026, 10, 1),
+        return GastoTallerEntity.nuevo("7", "P123ABC", UUID.randomUUID(), LocalDate.of(2026, 10, 1),
                 UUID.randomUUID(), lineas, Instant.now());
     }
 }

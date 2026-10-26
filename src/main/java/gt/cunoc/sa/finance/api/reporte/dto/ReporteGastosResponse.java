@@ -21,9 +21,9 @@ public record ReporteGastosResponse(
 
     /**
      * @param origen       VIAJE o TALLER
-     * @param referenciaId el viaje (trip) o el gasto de taller
+     * @param referenciaId el viaje (su id de trip) o el gasto de taller (su UUID), como texto
      */
-    public record Fila(LocalDate fecha, String origen, UUID referenciaId, String placa, String detalle,
+    public record Fila(LocalDate fecha, String origen, String referenciaId, String placa, String detalle,
             Costos costos) {
     }
 }

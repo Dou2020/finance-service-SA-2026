@@ -10,7 +10,7 @@ import gt.cunoc.sa.finance.domain.GastoTallerEntity;
 /** Una fila de la lista de gastos: el encabezado, sin las líneas (están en el detalle). */
 public record ResumenGastoResponse(
         UUID id,
-        UUID busId,
+        String busId,
         String placa,
         UUID sucursalId,
         LocalDate fechaServicio,

@@ -96,7 +96,7 @@ class GastosTallerIT {
 
     @Test
     void unBusQueFleetNoConoceDevuelveSu404() throws Exception {
-        UUID busId = UUID.randomUUID();
+        String busId = UUID.randomUUID().toString();
         escenario.fleetResponde(busId, 404, "No existe ese bus");
 
         registrar(Escenario.adminDe(escenario.sucursal()), unaLinea(busId, escenario.categoria(), null))
@@ -135,7 +135,7 @@ class GastosTallerIT {
     @Test
     void validaLasLineas() throws Exception {
         UUID sucursal = escenario.sucursal();
-        UUID busId = escenario.bus(sucursal).id();
+        String busId = escenario.bus(sucursal).id();
 
         registrar(Escenario.adminDe(sucursal), "{\"busId\": \"%s\", \"lineas\": []}".formatted(busId))
                 .andExpect(status().isBadRequest())
@@ -186,6 +186,74 @@ class GastosTallerIT {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * fleet numera con bigserial: el id llega como texto ("7") desde el frontend y fleet lo responde
+     * como número JSON. Se guarda como texto y la lista y el reporte por bus filtran por él (V3).
+     */
+    @Test
+    void registraUnGastoConElIdNumericoDeFleet() throws Exception {
+        UUID sucursal = escenario.sucursal();
+        Bus bus = escenario.bus(sucursal, "7");
+        int categoria = escenario.categoria();
+
+        String comoTexto = JsonPath.read(registrar(Escenario.adminDe(sucursal), unaLinea("7", categoria, "2026-09-30"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.busId").value("7"))
+                .andExpect(jsonPath("$.placa").value(bus.placa()))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        // Un formulario que manda el id como número JSON también entra: Jackson lo lee como "7".
+        String comoNumero = JsonPath.read(registrar(Escenario.adminDe(sucursal), """
+                {"busId": 7, "fechaServicio": "2026-09-30", "lineas": [
+                  {"categoriaId": %d, "descripcion": "Frenos", "tipo": "MANO_DE_OBRA", "monto": 250}
+                ]}""".formatted(categoria))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.busId").value("7"))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        assertThat(jdbc.queryForObject("select bus_id from gasto_taller where id = ?::uuid", String.class, comoTexto))
+                .isEqualTo("7");
+
+        mvc.perform(get("/api/gastos-taller").param("busId", "7").with(Escenario.como(Escenario.adminDe(sucursal))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", containsInAnyOrder(comoTexto, comoNumero)));
+        mvc.perform(get("/api/finanzas/reportes/taller-por-bus").param("busId", "7")
+                        .with(Escenario.como(Escenario.adminDe(sucursal))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.busId").value("7"))
+                .andExpect(jsonPath("$.buses[0].busId").value("7"))
+                .andExpect(jsonPath("$.buses[0].gastos").value(2));
+    }
+
+    @Test
+    void unBusIdVacioODeMasDe64Da400SinLlamarAFleet() throws Exception {
+        UUID sucursal = escenario.sucursal();
+        int categoria = escenario.categoria();
+        String largo = "9".repeat(65);
+
+        registrar(Escenario.adminDe(sucursal), unaLinea("  ", categoria, null))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.busId").value("no debe estar vacío"));
+        registrar(Escenario.adminDe(sucursal), unaLinea(largo, categoria, null))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.busId").value("el tamaño debe estar entre 0 y 64"));
+        registrar(Escenario.adminDe(sucursal), """
+                {"lineas": [{"categoriaId": %d, "descripcion": "x", "tipo": "REPUESTO", "monto": 1}]}"""
+                .formatted(categoria))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.busId").value("no debe estar vacío"));
+        assertThat(escenario.llamadasAFleet(largo)).isZero();
+    }
+
+    /**
+     * Desde V3 el id es texto libre: va como variable de la plantilla y RestClient lo codifica entero,
+     * así que una "/" no cambia la ruta que se le pide a fleet.
+     */
+    @Test
+    void unIdConBarrasNoCambiaLaRutaDeFleet() throws Exception {
+        registrar(Escenario.adminDe(escenario.sucursal()), unaLinea("7/../../dlq", escenario.categoria(), null))
+                .andExpect(status().isNotFound());   // el 404 de WireMock: ningún stub tiene esa ruta
+        assertThat(escenario.llamadasAFleet("7%2F..%2F..%2Fdlq")).isEqualTo(1);
+    }
+
     @Test
     void unIntervaloAlRevesDa400() throws Exception {
         mvc.perform(get("/api/gastos-taller").param("desde", "2026-10-01").param("hasta", "2026-09-01")
@@ -204,7 +272,7 @@ class GastosTallerIT {
                 .contentType(MediaType.APPLICATION_JSON).content(cuerpo));
     }
 
-    static String unaLinea(UUID busId, int categoria, String fecha) {
+    static String unaLinea(String busId, int categoria, String fecha) {
         String fechaJson = fecha == null ? "null" : "\"" + fecha + "\"";
         return """
                 {"busId": "%s", "fechaServicio": %s, "lineas": [
@@ -212,7 +280,7 @@ class GastosTallerIT {
                 ]}""".formatted(busId, fechaJson, categoria);
     }
 
-    private int gastosDe(UUID busId) {
+    private int gastosDe(String busId) {
         return jdbc.queryForObject("select count(*) from gasto_taller where bus_id = ?", Integer.class, busId);
     }
 }

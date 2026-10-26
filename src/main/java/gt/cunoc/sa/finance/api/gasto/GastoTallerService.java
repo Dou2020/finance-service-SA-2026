@@ -16,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.StringUtils;
 
 import gt.cunoc.sa.finance.api.categoria.CategoriaRepository;
 import gt.cunoc.sa.finance.api.error.ErrorDeNegocio;
@@ -68,7 +69,8 @@ public class GastoTallerService {
         if (fecha.isAfter(Calendario.hoy())) {
             throw ErrorDeNegocio.noProcesable("La fecha del servicio no puede ser posterior a hoy");
         }
-        BusRemoto bus = fleet.bus(solicitud.busId());
+        // Sin los espacios de los extremos: fleet no reconocería " 7". Se guarda el id que responde fleet.
+        BusRemoto bus = fleet.bus(solicitud.busId().strip());
         Alcance.exigirSucursal(actual, bus.sucursalId());
         return transacciones.execute(estado -> guardar(solicitud, bus, fecha, actual));
     }
@@ -102,16 +104,18 @@ public class GastoTallerService {
     /** El filtro de sucursal va en la consulta: un BRANCH_ADMIN nunca recibe filas de otra. */
     @PreAuthorize("hasAnyRole('SYS_ADMIN', 'BRANCH_ADMIN')")
     @Transactional(readOnly = true)
-    public Page<ResumenGastoResponse> listar(UUID sucursalId, UUID busId, Periodo periodo, Pageable pagina,
+    public Page<ResumenGastoResponse> listar(UUID sucursalId, String busId, Periodo periodo, Pageable pagina,
             UsuarioActual actual) {
         UUID alcance = Alcance.esSysAdmin(actual) ? sucursalId : Alcance.sucursalDe(actual);
+        // Vacío es "sin filtro", como hacía la conversión a UUID antes de V3 (ReporteService igual).
+        String bus = StringUtils.hasText(busId) ? busId.strip() : null;
         Specification<GastoTallerEntity> filtro = (raiz, consulta, cb) -> {
             List<Predicate> condiciones = new ArrayList<>();
             if (alcance != null) {
                 condiciones.add(cb.equal(raiz.get("sucursalId"), alcance));
             }
-            if (busId != null) {
-                condiciones.add(cb.equal(raiz.get("busId"), busId));
+            if (bus != null) {
+                condiciones.add(cb.equal(raiz.get("busId"), bus));
             }
             if (periodo.desde() != null) {
                 condiciones.add(cb.greaterThanOrEqualTo(raiz.get("fechaServicio"), periodo.desde()));

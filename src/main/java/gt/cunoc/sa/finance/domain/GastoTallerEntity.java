@@ -23,15 +23,16 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "gasto_taller")
-public class GastoTallerEntity extends ConIdAsignado {
+public class GastoTallerEntity extends ConIdAsignado<UUID> {
 
     @Id
     private UUID id;
 
-    @Column(name = "bus_id", nullable = false)
-    private UUID busId;
+    /** El id de fleet como texto (V3): fleet numera con bigserial. */
+    @Column(name = "bus_id", nullable = false, length = 64)
+    private String busId;
 
-    @Column(name = "placa_bus", nullable = false, length = 10)
+    @Column(name = "placa_bus", nullable = false, length = 20)
     private String placaBus;
 
     @Column(name = "sucursal_id", nullable = false)
@@ -70,7 +71,7 @@ public class GastoTallerEntity extends ConIdAsignado {
      * @param placaBus   la que respondió fleet: los reportes la muestran sin preguntarle
      * @param sucursalId la del bus
      */
-    public static GastoTallerEntity nuevo(UUID busId, String placaBus, UUID sucursalId, LocalDate fechaServicio,
+    public static GastoTallerEntity nuevo(String busId, String placaBus, UUID sucursalId, LocalDate fechaServicio,
             UUID registradoPor, List<NuevaLinea> lineas, Instant ahora) {
         if (lineas.isEmpty()) {
             throw new IllegalArgumentException("Un gasto de taller necesita al menos una línea");
@@ -101,7 +102,7 @@ public class GastoTallerEntity extends ConIdAsignado {
         return id;
     }
 
-    public UUID getBusId() {
+    public String getBusId() {
         return busId;
     }
 

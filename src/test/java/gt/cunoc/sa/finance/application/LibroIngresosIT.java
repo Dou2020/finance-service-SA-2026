@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,13 +41,13 @@ class LibroIngresosIT {
         UUID segundo = publicador.publicar(TiposEvento.BOLETOS_VENDIDOS, venta.toString(), 1, venta(venta, sucursal));
         await().atMost(ESPERA).until(() -> publicador.procesado(primero) && publicador.procesado(segundo));
 
-        Map<String, Object> ingreso = ingreso("BOLETO", venta);
+        Map<String, Object> ingreso = ingreso("BOLETO", venta.toString());
         assertThat(ingreso).containsEntry("sucursal_id", sucursal).containsEntry("reversado", false)
                 .containsEntry("monto", "225.00").containsEntry("fecha", "2026-10-05");
         // La salida va en la hora de Guatemala: 14:00 UTC son las 08:00.
         assertThat((String) ingreso.get("detalle"))
                 .isEqualTo("Quetzaltenango → Ciudad de Guatemala · 20/10/2026 08:00 · 3 asientos · en línea");
-        assertThat(cuantos("BOLETO", venta)).isEqualTo(1);
+        assertThat(cuantos("BOLETO", venta.toString())).isEqualTo(1);
     }
 
     @Test
@@ -58,7 +59,7 @@ class LibroIngresosIT {
         UUID anulada = publicador.publicar(TiposEvento.BOLETOS_ANULADOS, venta.toString(), 2, anulacion(venta, sucursal));
         await().atMost(ESPERA).until(() -> publicador.procesado(anulada));
 
-        Map<String, Object> ingreso = ingreso("BOLETO", venta);
+        Map<String, Object> ingreso = ingreso("BOLETO", venta.toString());
         assertThat(ingreso).containsEntry("reversado", true).containsEntry("monto", "225.00");
         assertThat(ingreso.get("reversado_en")).isNotNull();
     }
@@ -72,8 +73,8 @@ class LibroIngresosIT {
         UUID vendida = publicador.publicar(TiposEvento.BOLETOS_VENDIDOS, venta.toString(), 1, venta(venta, sucursal));
         await().atMost(ESPERA).until(() -> publicador.procesado(vendida));
 
-        assertThat(ingreso("BOLETO", venta)).containsEntry("reversado", true);
-        assertThat(cuantos("BOLETO", venta)).isEqualTo(1);
+        assertThat(ingreso("BOLETO", venta.toString())).containsEntry("reversado", true);
+        assertThat(cuantos("BOLETO", venta.toString())).isEqualTo(1);
     }
 
     @Test
@@ -85,14 +86,15 @@ class LibroIngresosIT {
                 "destino", "Antigua Guatemala", "fechaSalida", "2026-10-20", "monto", "1800.00",
                 "fechaPago", "2026-10-08", "metodoPago", "EFECTIVO"));
         await().atMost(ESPERA).until(() -> publicador.procesado(pagado));
-        assertThat(ingreso("ALQUILER", alquiler)).containsEntry("monto", "1800.00")
+        assertThat(ingreso("ALQUILER", alquiler.toString())).containsEntry("monto", "1800.00")
                 .containsEntry("fecha", "2026-10-08").containsEntry("reversado", false)
                 .containsEntry("detalle", "Alquiler · Ana López · Quetzaltenango → Antigua Guatemala · sale 20/10/2026");
 
         UUID cancelado = publicador.publicar(TiposEvento.ALQUILER_CANCELADO, alquiler.toString(), 6,
                 cancelacion(alquiler, sucursal, true, "CAJA"));
         await().atMost(ESPERA).until(() -> publicador.procesado(cancelado));
-        assertThat(ingreso("ALQUILER", alquiler)).containsEntry("reversado", true).containsEntry("monto", "1800.00");
+        assertThat(ingreso("ALQUILER", alquiler.toString())).containsEntry("reversado", true)
+                .containsEntry("monto", "1800.00");
     }
 
     @Test
@@ -102,7 +104,7 @@ class LibroIngresosIT {
                 cancelacion(alquiler, escenario.sucursal(), false, "NINGUNO"));
         await().atMost(ESPERA).until(() -> publicador.procesado(cancelado));
 
-        assertThat(cuantos("ALQUILER", alquiler)).isZero();
+        assertThat(cuantos("ALQUILER", alquiler.toString())).isZero();
     }
 
     /**
@@ -125,7 +127,7 @@ class LibroIngresosIT {
         publicador.publicar(evento, TiposEvento.BOLETOS_VENDIDOS, venta.toString(), 1, venta(venta, sucursal));
         await().atMost(ESPERA).until(() -> publicador.procesado(evento));
 
-        assertThat(cuantos("BOLETO", venta)).isEqualTo(1);
+        assertThat(cuantos("BOLETO", venta.toString())).isEqualTo(1);
     }
 
     @Test
@@ -137,16 +139,54 @@ class LibroIngresosIT {
         publicador.publicar(TiposEvento.BOLETOS_VENDIDOS, venta.toString(), 1, incompleta);
 
         await().atMost(Duration.ofSeconds(5)).until(() -> publicador.mensajesEnDlq() > antes);
-        assertThat(cuantos("BOLETO", venta)).isZero();
+        assertThat(cuantos("BOLETO", venta.toString())).isZero();
     }
 
-    /** Como lo publica sales: los campos que lee customer más sucursalId. */
-    private static Map<String, Object> venta(UUID venta, UUID sucursal) {
+    /** sales numera con bigserial: su id y el de trip llegan como texto ("101") y así quedan en el libro. */
+    @Test
+    void registraYReversaUnaVentaConLosIdsNumericosDeSalesYTrip() {
+        UUID sucursal = escenario.sucursal();
+        String venta = String.valueOf(ThreadLocalRandom.current().nextLong(1_000_000, 1_000_000_000L));
+        Map<String, Object> vendida = venta(venta, sucursal);
+        vendida.put("viajeId", "101");
+        UUID e11 = publicador.publicar(TiposEvento.BOLETOS_VENDIDOS, venta, 1, vendida);
+        await().atMost(ESPERA).until(() -> publicador.procesado(e11));
+        assertThat(ingreso("BOLETO", venta)).containsEntry("reversado", false).containsEntry("monto", "225.00");
+
+        Map<String, Object> anulada = anulacion(venta, sucursal);
+        anulada.put("viajeId", "101");
+        UUID e12 = publicador.publicar(TiposEvento.BOLETOS_ANULADOS, venta, 2, anulada);
+        await().atMost(ESPERA).until(() -> publicador.procesado(e12));
+        assertThat(ingreso("BOLETO", venta)).containsEntry("reversado", true).containsEntry("monto", "225.00");
+        assertThat(cuantos("BOLETO", venta)).isEqualTo(1);
+    }
+
+    /** Un ventaId vacío o de más de 64 caracteres (el largo de referencia_id, V3) va directo a la DLQ. */
+    @Test
+    void unVentaIdVacioODeMasDe64VaALaDlq() {
+        UUID sucursal = escenario.sucursal();
+        String largo = "9".repeat(65);
+        int antes = publicador.mensajesEnDlq();
+        UUID vacia = publicador.publicar(TiposEvento.BOLETOS_VENDIDOS, "", 1, venta("", sucursal));
+        await().atMost(Duration.ofSeconds(5)).until(() -> publicador.mensajesEnDlq() > antes);
+        UUID larga = publicador.publicar(TiposEvento.BOLETOS_ANULADOS, largo, 2, anulacion(largo, sucursal));
+        await().atMost(Duration.ofSeconds(5)).until(() -> publicador.mensajesEnDlq() > antes + 1);
+
+        assertThat(publicador.procesado(vacia)).isFalse();
+        assertThat(publicador.procesado(larga)).isFalse();
+        assertThat(cuantos("BOLETO", "")).isZero();
+    }
+
+    /**
+     * Como lo publica sales: los campos que lee customer más sucursalId. ventaId y viajeId son texto
+     * (V3); aquí van UUID, y en las pruebas de ids numéricos, los de sales y trip.
+     */
+    private static Map<String, Object> venta(Object venta, UUID sucursal) {
         Map<String, Object> v = new LinkedHashMap<>();
         v.put("ventaId", venta);
         v.put("clienteId", UUID.randomUUID());
         v.put("canal", "ONLINE");
-        v.put("viajeId", UUID.randomUUID());
+        v.put("viajeId", UUID.randomUUID().toString());
         v.put("sucursalId", sucursal);
         v.put("origen", "Quetzaltenango");
         v.put("destino", "Ciudad de Guatemala");
@@ -157,7 +197,7 @@ class LibroIngresosIT {
         return v;
     }
 
-    private static Map<String, Object> anulacion(UUID venta, UUID sucursal) {
+    private static Map<String, Object> anulacion(Object venta, UUID sucursal) {
         Map<String, Object> v = venta(venta, sucursal);
         v.put("motivo", "Se eliminó el viaje");
         return v;
@@ -177,13 +217,14 @@ class LibroIngresosIT {
         return c;
     }
 
-    private Map<String, Object> ingreso(String tipo, UUID referencia) {
+    /** referencia_id es texto (V3): el id de sales tal cual, o el UUID del alquiler en texto. */
+    private Map<String, Object> ingreso(String tipo, String referencia) {
         return jdbc.queryForMap("""
                 select sucursal_id, monto::text as monto, fecha::text as fecha, detalle, reversado, reversado_en
                 from ingreso where tipo = ? and referencia_id = ?""", tipo, referencia);
     }
 
-    private int cuantos(String tipo, UUID referencia) {
+    private int cuantos(String tipo, String referencia) {
         return jdbc.queryForObject("select count(*) from ingreso where tipo = ? and referencia_id = ?", Integer.class,
                 tipo, referencia);
     }

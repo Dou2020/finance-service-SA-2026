@@ -13,7 +13,7 @@ import gt.cunoc.sa.finance.domain.TipoLinea;
 /** El gasto con sus líneas. */
 public record GastoTallerResponse(
         UUID id,
-        UUID busId,
+        String busId,
         String placa,
         UUID sucursalId,
         LocalDate fechaServicio,

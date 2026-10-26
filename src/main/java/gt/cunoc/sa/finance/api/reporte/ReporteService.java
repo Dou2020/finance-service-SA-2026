@@ -17,6 +17,7 @@ import java.util.function.Function;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import gt.cunoc.sa.finance.api.gasto.GastoTallerRepository;
 import gt.cunoc.sa.finance.api.reporte.dto.Costos;
@@ -105,7 +106,8 @@ public class ReporteService {
         }
         for (GastoTallerEntity g : gastos.delPeriodo(alcance, periodo.inicio(), periodo.fin())) {
             porSucursal.computeIfAbsent(g.getSucursalId(), k -> new ArrayList<>()).add(new ReporteGastosResponse.Fila(
-                    g.getFechaServicio(), "TALLER", g.getId(), g.getPlacaBus(), "Gasto de taller", Costos.de(g)));
+                    g.getFechaServicio(), "TALLER", g.getId().toString(), g.getPlacaBus(), "Gasto de taller",
+                    Costos.de(g)));
         }
         List<ReporteGastosResponse.Sucursal> lista = nombres.enOrden(porSucursal.keySet()).stream().map(id -> {
             List<ReporteGastosResponse.Fila> filas = porSucursal.get(id).stream()
@@ -150,12 +152,13 @@ public class ReporteService {
 
     @PreAuthorize(SOLO_ADMINS)
     @Transactional(readOnly = true)
-    public ReporteTallerPorCategoriaResponse tallerPorCategoria(Periodo periodo, UUID sucursalId, UUID busId,
+    public ReporteTallerPorCategoriaResponse tallerPorCategoria(Periodo periodo, UUID sucursalId, String busId,
             UsuarioActual actual) {
         UUID alcance = alcance(sucursalId, actual);
+        String bus = filtroDeBus(busId);
         Sucursales nombres = sucursales();
         Map<Integer, List<LineaDeTaller>> porCategoria = new LinkedHashMap<>();
-        lineas.delPeriodo(alcance, busId, periodo.inicio(), periodo.fin())
+        lineas.delPeriodo(alcance, bus, periodo.inicio(), periodo.fin())
                 .forEach(l -> porCategoria.computeIfAbsent(l.categoriaId(), k -> new ArrayList<>()).add(l));
         List<ReporteTallerPorCategoriaResponse.Categoria> categorias = porCategoria.values().stream()
                 .map(suyas -> new ReporteTallerPorCategoriaResponse.Categoria(suyas.get(0).categoriaId(),
@@ -166,17 +169,18 @@ public class ReporteService {
                         suma(suyas, LineaDeTaller::monto)))
                 .sorted(Comparator.comparing(ReporteTallerPorCategoriaResponse.Categoria::nombre, ORDEN))
                 .toList();
-        return new ReporteTallerPorCategoriaResponse(periodo.desde(), periodo.hasta(), alcance, busId, categorias,
+        return new ReporteTallerPorCategoriaResponse(periodo.desde(), periodo.hasta(), alcance, bus, categorias,
                 suma(categorias, ReporteTallerPorCategoriaResponse.Categoria::total));
     }
 
     @PreAuthorize(SOLO_ADMINS)
     @Transactional(readOnly = true)
-    public ReporteTallerPorBusResponse tallerPorBus(Periodo periodo, UUID sucursalId, UUID busId,
+    public ReporteTallerPorBusResponse tallerPorBus(Periodo periodo, UUID sucursalId, String busId,
             UsuarioActual actual) {
         UUID alcance = alcance(sucursalId, actual);
+        String bus = filtroDeBus(busId);
         Sucursales nombres = sucursales();
-        Map<UUID, List<LineaDeTaller>> porBus = agrupar(lineas.delPeriodo(alcance, busId, periodo.inicio(),
+        Map<String, List<LineaDeTaller>> porBus = agrupar(lineas.delPeriodo(alcance, bus, periodo.inicio(),
                 periodo.fin()), LineaDeTaller::busId);
         List<ReporteTallerPorBusResponse.Bus> buses = porBus.values().stream().map(suyas -> {
             Map<String, List<LineaDeTaller>> porCategoria = new LinkedHashMap<>();
@@ -194,7 +198,7 @@ public class ReporteService {
                     suma(suyas, TipoLinea.MANO_DE_OBRA), suma(suyas, TipoLinea.REPUESTO),
                     suma(suyas, LineaDeTaller::monto));
         }).sorted(Comparator.comparing(ReporteTallerPorBusResponse.Bus::placa)).toList();
-        return new ReporteTallerPorBusResponse(periodo.desde(), periodo.hasta(), alcance, busId, buses,
+        return new ReporteTallerPorBusResponse(periodo.desde(), periodo.hasta(), alcance, bus, buses,
                 suma(buses, ReporteTallerPorBusResponse.Bus::total));
     }
 
@@ -203,7 +207,7 @@ public class ReporteService {
     public ReporteDepreciacionResponse depreciacion(Periodo periodo, UUID sucursalId, UsuarioActual actual) {
         UUID alcance = alcance(sucursalId, actual);
         Sucursales nombres = sucursales();
-        Map<UUID, List<CostoViajeEntity>> porBus = agrupar(
+        Map<String, List<CostoViajeEntity>> porBus = agrupar(
                 costos.delPeriodo(alcance, periodo.inicio(), periodo.fin()), CostoViajeEntity::getBusId);
         List<ReporteDepreciacionResponse.Bus> buses = porBus.values().stream().map(viajes -> {
             CostoViajeEntity ultimo = viajes.get(viajes.size() - 1);
@@ -226,13 +230,21 @@ public class ReporteService {
         return Alcance.esSysAdmin(actual) ? sucursalId : Alcance.sucursalDe(actual);
     }
 
+    /**
+     * El id de fleet como texto (V3). Vacío es "sin filtro", como hacía la conversión a UUID antes de
+     * V3: si no, un ?busId= sin valor no traería ninguna fila.
+     */
+    private static String filtroDeBus(String busId) {
+        return StringUtils.hasText(busId) ? busId.strip() : null;
+    }
+
     private static String detalle(CostoViajeEntity c) {
         return (c.getTipoViaje() == TipoViaje.ALQUILER ? "Viaje de alquiler" : "Viaje regular") + " · "
                 + c.getKmRecorridos() + " km";
     }
 
-    private static <T> Map<UUID, List<T>> agrupar(List<T> filas, Function<T, UUID> clave) {
-        Map<UUID, List<T>> grupos = new LinkedHashMap<>();
+    private static <T, K> Map<K, List<T>> agrupar(List<T> filas, Function<T, K> clave) {
+        Map<K, List<T>> grupos = new LinkedHashMap<>();
         filas.forEach(f -> grupos.computeIfAbsent(clave.apply(f), k -> new ArrayList<>()).add(f));
         return grupos;
     }

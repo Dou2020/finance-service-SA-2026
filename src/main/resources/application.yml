@@ -43,7 +43,9 @@ spring:
 # Servicios a los que llama por REST (README, "Comunicación entre servicios").
 clientes:
   fleet:
-    url: ${FLEET_URL:http://localhost:8082}   # S6: el bus de un gasto de taller
+    # S6: el bus de un gasto de taller. 8084 es el puerto del fleet importado: el 8082, que el
+    # diseño le daba a fleet, lo usa trip.
+    url: ${FLEET_URL:http://localhost:8084}
 
 # Modelo: PRACTICA_5 (order-service). Timeouts del cliente (ClientesConfig): conexión 1 s, respuesta 2 s.
 resilience4j:

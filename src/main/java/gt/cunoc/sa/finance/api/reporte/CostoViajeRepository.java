@@ -9,7 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 
 import gt.cunoc.sa.finance.domain.CostoViajeEntity;
 
-public interface CostoViajeRepository extends JpaRepository<CostoViajeEntity, UUID> {
+/** Por el id del viaje en trip, como texto (V3). */
+public interface CostoViajeRepository extends JpaRepository<CostoViajeEntity, String> {
 
     @Query("""
             select c from CostoViajeEntity c

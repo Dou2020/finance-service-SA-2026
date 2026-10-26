@@ -8,18 +8,20 @@ import java.util.UUID;
 
 /**
  * E11, lo publica sales al confirmar una venta, en línea o en mostrador. Los mismos campos que lee
- * customer más sucursalId; sales todavía no existe, así que es el contrato que tiene que cumplir
- * (API.md, "Consume"). aggregateId = ventaId.
+ * customer más sucursalId: es el contrato que sales tiene que cumplir (API.md, "Eventos que
+ * consume"). aggregateId = ventaId.
  *
+ * @param ventaId    id de sales como texto (su número o un UUID): es la referencia del ingreso
+ * @param viajeId    id de trip como texto; finance no lo usa
  * @param sucursalId la de origen de la ruta: ahí se reconoce el ingreso (README, supuesto 7)
  * @param canal      ONLINE o PRESENCIAL; solo se usa en el detalle
  * @param salida     fecha y hora de salida del viaje
  */
 public record BoletosVendidos(
-        UUID ventaId,
+        String ventaId,
         UUID sucursalId,
         String canal,
-        UUID viajeId,
+        String viajeId,
         String origen,
         String destino,
         Instant salida,

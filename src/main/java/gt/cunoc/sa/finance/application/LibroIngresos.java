@@ -99,7 +99,8 @@ public class LibroIngresos {
         exigirSucursal(a.sucursalId());
         String trayecto = a.origen() == null || a.destino() == null ? null : a.origen() + " → " + a.destino();
         String salida = a.fechaSalida() == null ? null : "sale " + a.fechaSalida().format(FECHA);
-        if (ingresos.registrar(TipoIngreso.ALQUILER.name(), a.alquilerId(), a.sucursalId(), a.monto(),
+        // referencia_id es texto (V3) por las ventas de sales; el alquiler va con su UUID canónico.
+        if (ingresos.registrar(TipoIngreso.ALQUILER.name(), a.alquilerId().toString(), a.sucursalId(), a.monto(),
                 a.fechaPago(), detalle("Alquiler", a.nombre(), trayecto, salida)) == 0) {
             log.info("El alquiler {} ya estaba en el libro (o cancelado); se descarta", a.alquilerId());
         }
@@ -122,11 +123,12 @@ public class LibroIngresos {
         Payloads.exigir(a.sucursalId() != null && a.monto() != null && a.fechaPago() != null, sobre,
                 "sucursalId, monto o fechaPago de un alquiler pagado");
         exigirSucursal(a.sucursalId());
-        ingresos.reversar(TipoIngreso.ALQUILER.name(), a.alquilerId(), a.sucursalId(), a.monto(), a.fechaPago(),
-                detalle("Alquiler", a.nombre()));
+        ingresos.reversar(TipoIngreso.ALQUILER.name(), a.alquilerId().toString(), a.sucursalId(), a.monto(),
+                a.fechaPago(), detalle("Alquiler", a.nombre()));
     }
 
     private void exigir(Sobre sobre, Venta venta) {
+        Payloads.exigirId(venta.ventaId(), sobre, "ventaId");
         Payloads.exigir(venta.completa(), sobre, "datos de la venta");
         exigirSucursal(venta.sucursalId());
     }
@@ -144,12 +146,13 @@ public class LibroIngresos {
         return texto.length() <= LARGO_DETALLE ? texto : texto.substring(0, LARGO_DETALLE - 1) + "…";
     }
 
-    /** Lo que E11 y E12 traen de la venta. */
-    private record Venta(UUID ventaId, UUID sucursalId, String canal, String origen, String destino, Instant salida,
-            List<Integer> asientos, BigDecimal total, LocalDate fechaPago) {
+    /** Lo que E11 y E12 traen de la venta; ventaId es el id de sales como texto. */
+    private record Venta(String ventaId, UUID sucursalId, String canal, String origen, String destino,
+            Instant salida, List<Integer> asientos, BigDecimal total, LocalDate fechaPago) {
 
+        /** Sin ventaId, que se valida aparte (Payloads.exigirId). */
         boolean completa() {
-            return ventaId != null && sucursalId != null && origen != null && destino != null && salida != null
+            return sucursalId != null && origen != null && destino != null && salida != null
                     && asientos != null && !asientos.isEmpty() && total != null && fechaPago != null;
         }
 

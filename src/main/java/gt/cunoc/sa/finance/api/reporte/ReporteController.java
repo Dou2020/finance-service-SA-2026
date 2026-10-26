@@ -63,19 +63,19 @@ public class ReporteController {
 
     @GetMapping("/taller-por-categoria")
     @Operation(summary = "Gastos de taller por categoría: cada línea, total por categoría y gran total",
-            description = "Filtros opcionales por sucursal y por bus")
+            description = "Filtros opcionales por sucursal y por bus (el id de fleet, como texto)")
     public ReporteTallerPorCategoriaResponse tallerPorCategoria(@RequestParam(required = false) LocalDate desde,
             @RequestParam(required = false) LocalDate hasta, @RequestParam(required = false) UUID sucursalId,
-            @RequestParam(required = false) UUID busId, @AuthenticationPrincipal UsuarioActual actual) {
+            @RequestParam(required = false) String busId, @AuthenticationPrincipal UsuarioActual actual) {
         return servicio.tallerPorCategoria(new Periodo(desde, hasta), sucursalId, busId, actual);
     }
 
     @GetMapping("/taller-por-bus")
     @Operation(summary = "Gastos de taller por bus, con subtotal por categoría y total del bus",
-            description = "Filtro opcional por bus")
+            description = "Filtro opcional por bus (el id de fleet, como texto)")
     public ReporteTallerPorBusResponse tallerPorBus(@RequestParam(required = false) LocalDate desde,
             @RequestParam(required = false) LocalDate hasta, @RequestParam(required = false) UUID sucursalId,
-            @RequestParam(required = false) UUID busId, @AuthenticationPrincipal UsuarioActual actual) {
+            @RequestParam(required = false) String busId, @AuthenticationPrincipal UsuarioActual actual) {
         return servicio.tallerPorBus(new Periodo(desde, hasta), sucursalId, busId, actual);
     }
 

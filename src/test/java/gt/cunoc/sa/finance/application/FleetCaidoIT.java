@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -47,7 +48,7 @@ class FleetCaidoIT {
     @Test
     void unErrorDeFleetSeReintentaUnaVezYDa503SinGuardar() throws Exception {
         UUID sucursal = escenario.sucursal();
-        UUID busId = UUID.randomUUID();
+        String busId = UUID.randomUUID().toString();
         escenario.fleetResponde(busId, 500, "Error interno");
 
         registrar(sucursal, busId)
@@ -58,9 +59,33 @@ class FleetCaidoIT {
                 .isZero();
     }
 
+    /**
+     * Un 200 que no cumple el contrato no se registra: sin id (el que se guarda en el gasto), o con el
+     * nombre de la sucursal en vez de su UUID, como algunos registros viejos de fleet.
+     */
+    @Test
+    void unBusSinIdOConUnaSucursalQueNoEsUuidDa503() throws Exception {
+        UUID sucursal = escenario.sucursal();
+        String sinId = UUID.randomUUID().toString();
+        escenario.fleetDevuelve(sinId, "{\"placa\": \"P123BCD\", \"sucursalId\": \"%s\", \"estado\": \"DISPONIBLE\"}"
+                .formatted(sucursal));
+        String conNombre = UUID.randomUUID().toString();
+        escenario.fleetDevuelve(conNombre,
+                "{\"id\": 8, \"placa\": \"P123BCD\", \"sucursalId\": \"Quetzaltenango\", \"estado\": \"DISPONIBLE\"}");
+
+        for (String busId : List.of(sinId, conNombre)) {
+            registrar(sucursal, busId)
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.detail").value(NO_DISPONIBLE));
+            assertThat(escenario.llamadasAFleet(busId)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("select count(*) from gasto_taller where bus_id = ?", Integer.class,
+                    busId)).isZero();
+        }
+    }
+
     @Test
     void fleetLentoAgotaElTimeoutYDa503() throws Exception {
-        UUID busId = UUID.randomUUID();
+        String busId = UUID.randomUUID().toString();
         escenario.fleetTarda(busId, 3_000);
 
         registrar(escenario.sucursal(), busId)
@@ -71,7 +96,7 @@ class FleetCaidoIT {
     @Test
     void cincoFallosSeguidosAbrenElCircuitoYYaNoSeLlamaAFleet() throws Exception {
         UUID sucursal = escenario.sucursal();
-        UUID busId = UUID.randomUUID();
+        String busId = UUID.randomUUID().toString();
         escenario.fleetResponde(busId, 503, "Mantenimiento");
 
         for (int i = 0; i < 5; i++) {
@@ -89,7 +114,7 @@ class FleetCaidoIT {
     @Test
     void los404NoAbrenElCircuito() throws Exception {
         UUID sucursal = escenario.sucursal();
-        UUID busId = UUID.randomUUID();
+        String busId = UUID.randomUUID().toString();
         escenario.fleetResponde(busId, 404, "No existe ese bus");
 
         for (int i = 0; i < 10; i++) {
@@ -99,7 +124,7 @@ class FleetCaidoIT {
         assertThat(escenario.llamadasAFleet(busId)).isEqualTo(10);
     }
 
-    private ResultActions registrar(UUID sucursal, UUID busId) throws Exception {
+    private ResultActions registrar(UUID sucursal, String busId) throws Exception {
         return mvc.perform(post("/api/gastos-taller").with(Escenario.como(Escenario.adminDe(sucursal)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(GastosTallerIT.unaLinea(busId, escenario.categoria(), null)));

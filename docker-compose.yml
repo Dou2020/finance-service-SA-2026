@@ -41,7 +41,8 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       # S6: validar el bus de un gasto de taller. Si fleet no está arriba, solo ese alta responde 503.
-      FLEET_URL: http://fleet-service:8082
+      # 8084 es el puerto del fleet importado: el 8082, que el diseño le daba a fleet, lo usa trip.
+      FLEET_URL: http://fleet-service:8084
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50   # mismo criterio que identity-service
     # Solo su base: RabbitMQ es de otro proyecto. Si no está listo, Spring AMQP reintenta la
     # conexión y el healthcheck queda en rojo hasta que llegue.

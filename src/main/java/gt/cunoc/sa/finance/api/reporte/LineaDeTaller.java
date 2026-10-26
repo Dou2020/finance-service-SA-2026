@@ -9,7 +9,7 @@ import gt.cunoc.sa.finance.domain.TipoLinea;
 /** Una línea de gasto con su encabezado y su categoría: la fila de los dos reportes de taller. */
 public record LineaDeTaller(
         UUID gastoId,
-        UUID busId,
+        String busId,
         String placa,
         UUID sucursalId,
         LocalDate fecha,

@@ -42,35 +42,50 @@ public class Escenario {
         this.fleet = fleet;
     }
 
-    /** Un bus que fleet (S6) conoce, de esa sucursal. */
+    /** Un bus que fleet (S6) conoce, de esa sucursal, con un UUID en texto por id (válido desde V3). */
     public Bus bus(UUID sucursal) {
-        Bus bus = new Bus(UUID.randomUUID(), "P" + (100 + CONTADOR.incrementAndGet() % 900) + "BCD");
+        return bus(sucursal, UUID.randomUUID().toString());
+    }
+
+    /**
+     * Con el id dado. Uno numérico ("7") lo responde como número JSON, como el fleet importado, que
+     * numera con bigserial: así se prueba que finance lo lee como texto.
+     */
+    public Bus bus(UUID sucursal, String id) {
+        Bus bus = new Bus(id, "P" + (100 + CONTADOR.incrementAndGet() % 900) + "BCD");
+        String idJson = id.matches("\\d+") ? id : "\"" + id + "\"";
         fleet.stubFor(get(urlEqualTo("/internal/buses/" + bus.id())).willReturn(okJson("""
-                {"id": "%s", "placa": "%s", "sucursalId": "%s", "estado": "DISPONIBLE"}"""
-                .formatted(bus.id(), bus.placa(), sucursal))));
+                {"id": %s, "placa": "%s", "sucursalId": "%s", "estado": "DISPONIBLE"}"""
+                .formatted(idJson, bus.placa(), sucursal))));
         return bus;
     }
 
+    /** fleet responde 200 a ese bus con el cuerpo dado, cumpla o no el contrato de S6. */
+    public void fleetDevuelve(String busId, String cuerpo) {
+        fleet.stubFor(get(urlEqualTo("/internal/buses/" + busId)).willReturn(okJson(cuerpo)));
+    }
+
     /** fleet responde a ese bus como lo haría su ManejadorErrores. */
-    public void fleetResponde(UUID busId, int estado, String detalle) {
+    public void fleetResponde(String busId, int estado, String detalle) {
         fleet.stubFor(get(urlEqualTo("/internal/buses/" + busId)).willReturn(aResponse().withStatus(estado)
                 .withHeader("Content-Type", "application/problem+json")
                 .withBody("{\"status\": %d, \"detail\": \"%s\"}".formatted(estado, detalle))));
     }
 
     /** fleet tarda más que el timeout de respuesta (2 s) con ese bus. */
-    public void fleetTarda(UUID busId, int milisegundos) {
+    public void fleetTarda(String busId, int milisegundos) {
         fleet.stubFor(get(urlEqualTo("/internal/buses/" + busId)).willReturn(okJson("{}")
                 .withFixedDelay(milisegundos)));
     }
 
-    /** Cuántas veces se llamó a fleet por ese bus. */
-    public int llamadasAFleet(UUID busId) {
+    /** Cuántas veces se llamó a fleet por ese bus (el id como va en la ruta, ya codificado). */
+    public int llamadasAFleet(String busId) {
         return fleet.countRequestsMatching(getRequestedFor(urlEqualTo("/internal/buses/" + busId)).build())
                 .getCount();
     }
 
-    public record Bus(UUID id, String placa) {
+    /** @param id el de fleet, como texto */
+    public record Bus(String id, String placa) {
     }
 
     /** Una sucursal ya replicada (como si hubiera llegado su E1), con un nombre único. */
@@ -98,7 +113,7 @@ public class Escenario {
                 insert into gasto_taller (id, bus_id, placa_bus, sucursal_id, fecha_servicio, total_mano_obra,
                                           total_repuestos, total, registrado_por)
                 values (?, ?, 'P123ABC', ?, current_date, 100.00, 0, 100.00, ?)""",
-                id, UUID.randomUUID(), sucursal, UUID.randomUUID());
+                id, UUID.randomUUID().toString(), sucursal, UUID.randomUUID());
         jdbc.update("""
                 insert into linea_gasto (gasto_id, categoria_id, descripcion, tipo, monto)
                 values (?, ?, 'Revisión', 'MANO_DE_OBRA', 100.00)""", id, categoria);
@@ -121,12 +136,12 @@ public class Escenario {
         return actual(Rol.CUSTOMER, null, null);
     }
 
-    /** Igual que el JWT de un DRIVER: trae choferId y no sucursal. */
-    public static UsuarioActual chofer(UUID choferId) {
+    /** Igual que el JWT de un DRIVER: trae choferId (el id de fleet, como texto) y no sucursal. */
+    public static UsuarioActual chofer(String choferId) {
         return actual(Rol.DRIVER, null, choferId);
     }
 
-    private static UsuarioActual actual(Rol rol, UUID sucursal, UUID chofer) {
+    private static UsuarioActual actual(Rol rol, UUID sucursal, String chofer) {
         return new UsuarioActual(UUID.randomUUID(), sucursal, chofer, Set.of(rol.name()));
     }
 
@@ -139,7 +154,7 @@ public class Escenario {
                 request.addHeader("X-Sucursal-Id", actual.sucursalId().toString());
             }
             if (actual.choferId() != null) {
-                request.addHeader("X-Chofer-Id", actual.choferId().toString());
+                request.addHeader("X-Chofer-Id", actual.choferId());
             }
             return request;
         };

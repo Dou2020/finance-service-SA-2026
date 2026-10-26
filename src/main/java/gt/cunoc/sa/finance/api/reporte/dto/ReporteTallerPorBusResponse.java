@@ -13,12 +13,15 @@ public record ReporteTallerPorBusResponse(
         LocalDate desde,
         LocalDate hasta,
         UUID sucursalId,
-        UUID busId,
+        String busId,
         List<Bus> buses,
         BigDecimal granTotal) {
 
-    /** @param gastos cuántos gastos de taller tuvo en el período */
-    public record Bus(UUID busId, String placa, String sucursal, long gastos, List<Categoria> categorias,
+    /**
+     * @param busId  el id de fleet como texto
+     * @param gastos cuántos gastos de taller tuvo en el período
+     */
+    public record Bus(String busId, String placa, String sucursal, long gastos, List<Categoria> categorias,
             BigDecimal manoDeObra, BigDecimal repuestos, BigDecimal total) {
     }
 

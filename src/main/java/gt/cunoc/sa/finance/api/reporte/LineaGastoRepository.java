@@ -20,5 +20,5 @@ public interface LineaGastoRepository extends Repository<LineaGastoEntity, Long>
               and (:busId is null or g.busId = :busId)
               and g.fechaServicio between :desde and :hasta
             order by g.fechaServicio, g.creadoEn, l.id""")
-    List<LineaDeTaller> delPeriodo(UUID sucursalId, UUID busId, LocalDate desde, LocalDate hasta);
+    List<LineaDeTaller> delPeriodo(UUID sucursalId, String busId, LocalDate desde, LocalDate hasta);
 }

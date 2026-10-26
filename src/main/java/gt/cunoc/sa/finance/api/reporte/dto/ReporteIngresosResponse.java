@@ -24,7 +24,7 @@ public record ReporteIngresosResponse(
     public record Sucursal(UUID sucursalId, String nombre, List<Fila> filas, Ingresos subtotal) {
     }
 
-    /** @param referenciaId la venta (BOLETO) o el alquiler (ALQUILER) de origen */
-    public record Fila(LocalDate fecha, TipoIngreso tipo, UUID referenciaId, String detalle, BigDecimal monto) {
+    /** @param referenciaId la venta de sales (BOLETO) o el alquiler de customer (ALQUILER), como texto */
+    public record Fila(LocalDate fecha, TipoIngreso tipo, String referenciaId, String detalle, BigDecimal monto) {
     }
 }

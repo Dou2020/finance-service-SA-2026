@@ -24,7 +24,8 @@ public record ReporteDepreciacionResponse(
         long kmRecorridos,
         BigDecimal depreciacion) {
 
-    public record Bus(UUID busId, String placa, String sucursal, long viajes, long kmRecorridos,
+    /** @param busId el id de fleet como texto, el que trajo el E9 */
+    public record Bus(String busId, String placa, String sucursal, long viajes, long kmRecorridos,
             BigDecimal depreciacion) {
     }
 }

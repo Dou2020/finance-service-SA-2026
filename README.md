@@ -5,9 +5,11 @@ del viaje, libro de ingresos, reportes) está en el [README del proyecto](../REA
 
 finance solo consume eventos (no tiene outbox): arma las réplicas de sucursales y tarifas de depreciación,
 el libro de ingresos (boletos y alquileres, con sus reversos) y los costos de cada viaje. Los gastos de
-taller y su catálogo de categorías se registran aquí, con el bus validado en fleet (S6). fleet, trip y sales
-todavía no existen: S6, E9, E11 y E12 se implementaron contra el contrato de [API.md](API.md#llama-a) y se
-prueban con WireMock y eventos publicados a mano.
+taller y su catálogo de categorías se registran aquí, con el bus validado en fleet (S6). finance se hizo antes
+que fleet, trip y sales, que llegaron importados y todavía no cumplen el contrato: S6, E9, E11 y E12 se
+implementaron contra el de [API.md](API.md#llama-a) y se prueban con WireMock y eventos publicados a mano. Los
+ids de esos tres servicios (bus, viaje, chofer, venta) se guardan como texto (`V3`): ellos numeran con
+bigserial y los mandan tal cual (`"7"`).
 
 ## Librerías
 
@@ -85,10 +87,10 @@ finance-service/
     │   │   │       └── ServicioNoDisponibleException.java   fleet (S6) no respondió o su circuito está abierto → 503
     │   │   ├── domain/                    entidades JPA y reglas
     │   │   │   ├── CategoriaGastoEntity.java           catálogo; nombre sin espacios de más
-    │   │   │   ├── GastoTallerEntity.java              encabezado; calcula los totales de sus líneas al crearse
+    │   │   │   ├── GastoTallerEntity.java              encabezado (bus de fleet como texto); calcula los totales de sus líneas al crearse
     │   │   │   ├── LineaGastoEntity.java               categoría, descripción, tipo y monto
-    │   │   │   ├── CostoViajeEntity.java               costos de un viaje: depreciación = km × tarifa, salario + 15 % en alquiler
-    │   │   │   ├── IngresoEntity.java                  una fila del libro (solo lectura: la escribe IngresoRepository)
+    │   │   │   ├── CostoViajeEntity.java               costos de un viaje (ids de trip y fleet como texto): depreciación = km × tarifa, salario + 15 % en alquiler
+    │   │   │   ├── IngresoEntity.java                  una fila del libro, con la venta o el alquiler como texto (solo lectura: la escribe IngresoRepository)
     │   │   │   ├── SucursalReplicaEntity.java          réplica de E1 (solo lectura)
     │   │   │   ├── TarifaDepreciacionEntity.java       réplica de E2 (solo lectura)
     │   │   │   ├── TipoLinea.java                      MANO_DE_OBRA, REPUESTO
@@ -96,7 +98,7 @@ finance-service/
     │   │   │   ├── TipoViaje.java                      REGULAR, ALQUILER
     │   │   │   ├── Rol.java                            SYS_ADMIN, BRANCH_ADMIN, CASHIER, DRIVER, CUSTOMER
     │   │   │   ├── Calendario.java                     "hoy" en America/Guatemala, no en UTC
-    │   │   │   └── ConIdAsignado.java                  Persistable: persist() y no merge() con UUID asignado
+    │   │   │   └── ConIdAsignado.java                  Persistable: persist() y no merge() con id asignado (UUID o texto)
     │   │   ├── application/               casos de uso compartidos entre recursos o sin endpoint; regla de alcance
     │   │   │   ├── ReplicaSucursales.java               E1
     │   │   │   ├── ReplicaTarifas.java                  E2, solo DEPRECIACION_KM
@@ -110,11 +112,11 @@ finance-service/
     │   │       ├── client/                                 llamadas REST a otros servicios (modelo: PRACTICA_5)
     │   │       │   ├── ClientesConfig.java                 HttpClient del JDK: conexión 1 s, respuesta 2 s, HTTP/1.1
     │   │       │   ├── ErroresRemotos.java                 4xx → ErrorDeNegocio con su detail; 5xx y transporte → 503; X-Correlation-Id
-    │   │       │   ├── FleetClient.java                    S6 con circuit breaker y un reintento
-    │   │       │   └── BusRemoto.java                      lo que se lee del bus: placa, sucursal, estado
+    │   │       │   ├── FleetClient.java                    S6 con circuit breaker y un reintento; el id va como texto, codificado entero
+    │   │       │   └── BusRemoto.java                      lo que se lee del bus: id (texto, aunque llegue como número), placa, sucursal, estado
     │   │       ├── messaging/                              inbox y RabbitMQ (copiado de identity; sin outbox)
     │   │       │   ├── Sobre.java                          sobre de cada evento (eventId, type, aggregateVersion…)
-    │   │       │   ├── Payloads.java                       payload → record; ilegible o incompleto → DLQ (copiado de customer)
+    │   │       │   ├── Payloads.java                       payload → record; ilegible, incompleto o con un id vacío o de más de 64 → DLQ (copiado de customer)
     │   │       │   ├── Inbox.java                          un evento ya aplicado no tiene efecto
     │   │       │   ├── ProcessedEvent.java                 fila de processed_event
     │   │       │   ├── ProcessedEventRepository.java       INSERT … ON CONFLICT DO NOTHING
@@ -127,15 +129,15 @@ finance-service/
     │   │       │       ├── TiposEvento.java                routing keys: consume E1, E2, E9, E11, E12, E14, E16; no publica
     │   │       │       ├── SucursalGuardada.java           E1
     │   │       │       ├── ConfiguracionActualizada.java   E2
-    │   │       │       ├── ViajeFinalizado.java            E9 (contrato con trip)
-    │   │       │       ├── BoletosVendidos.java            E11 (contrato con sales: lo de customer más sucursalId)
-    │   │       │       ├── BoletosAnulados.java            E12
+    │   │       │       ├── ViajeFinalizado.java            E9 (contrato con trip; viajeId, busId y choferId como texto)
+    │   │       │       ├── BoletosVendidos.java            E11 (contrato con sales: lo de customer más sucursalId; ventaId y viajeId como texto)
+    │   │       │       ├── BoletosAnulados.java            E12 (los mismos campos y motivo)
     │   │       │       ├── AlquilerPagado.java             E14
     │   │       │       └── AlquilerCancelado.java          E16
     │   │       ├── security/
     │   │       │   ├── SeguridadConfig.java                cadena de Spring Security; 401 y 403 como ProblemDetail
     │   │       │   ├── EncabezadosGatewayFilter.java       X-User-* del gateway → UsuarioActual
-    │   │       │   └── UsuarioActual.java                  principal: usuario, sucursal, chofer y roles
+    │   │       │   └── UsuarioActual.java                  principal: usuario, sucursal, chofer (id de fleet, texto) y roles
     │   │       └── web/
     │   │           ├── CorrelationIdFilter.java            X-Correlation-Id → MDC y respuesta
     │   │           ├── DocumentacionConfig.java            OpenAPI: servidor relativo y bearerAuth
@@ -145,26 +147,28 @@ finance-service/
     │       └── db/migration/                   Flyway
     │           ├── V1__esquema_inicial.sql     réplicas de sucursales y tarifas de depreciación, categorías,
     │           │                               gastos de taller con sus líneas, costos de viaje, ingresos e inbox
-    │           └── V2__categorias_iniciales.sql nombre único sin mayúsculas y las 8 categorías del enunciado
+    │           ├── V2__categorias_iniciales.sql nombre único sin mayúsculas y las 8 categorías del enunciado
+    │           └── V3__ids_como_texto.sql      ids de fleet, trip y sales de uuid a varchar(64) (bus, viaje, chofer,
+    │                                           venta); la placa, de 10 a 20 como en fleet
     └── test/
         └── java/gt/cunoc/sa/finance/
             ├── PruebaDeIntegracion.java        meta-anotación: un solo contexto para todas
             ├── ContenedoresDePrueba.java       PostgreSQL y RabbitMQ en Testcontainers; WireMock como fleet
-            ├── Escenario.java                  usuarios del gateway, sucursales, categorías y gastos en la base; buses en WireMock
+            ├── Escenario.java                  usuarios del gateway, sucursales, categorías y gastos en la base; buses en WireMock (UUID o id numérico, como fleet)
             ├── Publicador.java                 publica eventos como identity, trip, sales o customer; inbox y DLQ
-            ├── FinanceApplicationTests.java    migraciones aplicadas, sin outbox, categorías iniciales
-            ├── SeguridadTest.java              401, 404, health y X-Correlation-Id
+            ├── FinanceApplicationTests.java    migraciones aplicadas (V1–V3), ids de los importados como texto, sin outbox, categorías iniciales
+            ├── SeguridadTest.java              401, 403 de un chofer con id numérico, 404, health y X-Correlation-Id
             ├── domain/
             │   ├── GastoTallerEntityTest.java  totales por tipo, sin líneas, nombre de categoría
             │   └── CostoViajeEntityTest.java   depreciación, +15 % en alquiler, redondeo, km al revés
             └── application/
                 ├── ReplicasIT.java             E1 (versión vieja, duplicado, DLQ) y E2 (una vez; alquiler descartado)
                 ├── CategoriasIT.java           CRUD, nombre repetido, borrar con y sin gastos, autorización
-                ├── GastosTallerIT.java         S6 en WireMock: totales, alcance, 404 de fleet, 422, 409, listas y 400
-                ├── FleetCaidoIT.java           500 con reintento, timeout, circuito abierto; los 404 no lo abren
-                ├── LibroIngresosIT.java        E11, E12, E14, E16: duplicado, reverso, lápida, sucursal sin replicar
-                ├── CostosDeViajeIT.java        E9: tarifa a la fecha de llegada en Guatemala, alquiler, sin tarifa, DLQ
-                └── ReportesIT.java             los 6 reportes sobre dos sucursales: totales, orden, alcance, 403 y 400
+                ├── GastosTallerIT.java         S6 en WireMock: totales, alcance, 404 de fleet, 422, 409, listas y 400; id numérico de fleet, busId inválido, "/" codificada
+                ├── FleetCaidoIT.java           500 con reintento, timeout, circuito abierto; los 404 no lo abren; 200 sin id o con sucursal que no es UUID
+                ├── LibroIngresosIT.java        E11, E12, E14, E16: duplicado, reverso, lápida, sucursal sin replicar; ids numéricos de sales, ventaId inválido
+                ├── CostosDeViajeIT.java        E9: tarifa a la fecha de llegada en Guatemala, alquiler, sin tarifa, DLQ; ids numéricos (texto y número JSON), id inválido
+                └── ReportesIT.java             los 6 reportes sobre dos sucursales (una con ids numéricos): totales, orden, alcance, 403 y 400
 ```
 
 ## Endpoints
@@ -190,8 +194,8 @@ ve su sucursal; el `SYS_ADMIN`, todas o la que pida con `sucursalId`.
 
 | Método | Ruta | Quién | Qué hace |
 |---|---|---|---|
-| POST | `/api/gastos-taller` | `BRANCH_ADMIN` | `{busId, fechaServicio?, lineas: [{categoriaId, descripcion, tipo, monto}]}` → `201` con los totales. Valida el bus en fleet (S6): `404` de fleet, `403` de otra sucursal, `503` si no responde; `422` categoría inexistente o desactivada, o fecha futura |
-| GET | `/api/gastos-taller` | `SYS_ADMIN` (`sucursalId?`), `BRANCH_ADMIN` | Paginado, del servicio más reciente; filtros `busId`, `desde`, `hasta` |
+| POST | `/api/gastos-taller` | `BRANCH_ADMIN` | `{busId, fechaServicio?, lineas: [{categoriaId, descripcion, tipo, monto}]}` → `201` con los totales. `busId` es el id de fleet como texto (`"7"`). Valida el bus en fleet (S6): `404` de fleet, `403` de otra sucursal, `503` si no responde; `422` categoría inexistente o desactivada, o fecha futura |
+| GET | `/api/gastos-taller` | `SYS_ADMIN` (`sucursalId?`), `BRANCH_ADMIN` | Paginado, del servicio más reciente; filtros `busId` (texto), `desde`, `hasta` |
 | GET | `/api/gastos-taller/{id}` | `SYS_ADMIN`, `BRANCH_ADMIN` de su sucursal | Encabezado y líneas con el nombre de su categoría |
 
 ### Reportes — `/api/finanzas/reportes`
@@ -269,7 +273,8 @@ lo describe con `stack.sh`, que todavía no existe; aquí va con `docker compose
    La base y RabbitMQ los encuentra en `localhost`, porque los dos se publican en `127.0.0.1`. El usuario de la
    base sale de `DB_USER` y `DB_PASSWORD`, no de `FINANCE_DB_USER`. Sus valores por defecto en
    `application.yml` son los del `.env.example`; si se cambiaron en `.env`, también hay que exportarlos. fleet
-   (S6) se busca en `FLEET_URL`, por defecto `http://localhost:8082`.
+   (S6) se busca en `FLEET_URL`, por defecto `http://localhost:8084`, el puerto del fleet importado (en el
+   compose, `http://fleet-service:8084`). El 8082 del diseño lo usa trip.
 
 5. **Pruebas**, con Docker corriendo. Testcontainers levanta su propio PostgreSQL y RabbitMQ, y fleet es un
    servidor falso (WireMock), así que no usa la infra, la base de arriba ni fleet:
@@ -288,6 +293,8 @@ lo describe con `stack.sh`, que todavía no existe; aquí va con `docker compose
    ```
 
    Devuelve las categorías iniciales (Llantas, Motor, Frenos…). Registrar un gasto de taller
-   (`POST /api/gastos-taller`) necesita fleet, y hoy da `503`: el compose busca fleet en
-   `http://fleet-service:8082`, el puerto del diseño, pero el fleet importado escucha en el 8084 y no tiene
-   compose. Los libros y los reportes se llenan con los eventos de identity, trip, sales y customer.
+   (`POST /api/gastos-taller`) necesita S6, y hoy no se puede: el compose ya busca fleet en su puerto
+   (`http://fleet-service:8084`) y el id numérico de fleet entra como texto, pero el fleet importado todavía no
+   expone `GET /internal/buses/{id}` (ola 2 del plan de eventos). Con fleet abajo da `503`; con fleet arriba,
+   el `4xx` que responda fleet. Los libros y los reportes se llenan con los eventos de identity, trip, sales y
+   customer.

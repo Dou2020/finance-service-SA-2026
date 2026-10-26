@@ -37,7 +37,7 @@ public interface IngresoRepository extends JpaRepository<IngresoEntity, Long> {
             insert into ingreso (tipo, referencia_id, sucursal_id, monto, fecha, detalle)
             values (:tipo, :referenciaId, :sucursalId, :monto, :fecha, :detalle)
             on conflict (tipo, referencia_id) do nothing""", nativeQuery = true)
-    int registrar(String tipo, UUID referenciaId, UUID sucursalId, BigDecimal monto, LocalDate fecha, String detalle);
+    int registrar(String tipo, String referenciaId, UUID sucursalId, BigDecimal monto, LocalDate fecha, String detalle);
 
     /**
      * Reversa el ingreso, o deja la lápida si todavía no llegó (o nunca va a llegar, como la venta que
@@ -52,5 +52,5 @@ public interface IngresoRepository extends JpaRepository<IngresoEntity, Long> {
             values (:tipo, :referenciaId, :sucursalId, :monto, :fecha, :detalle, true, now())
             on conflict (tipo, referencia_id) do update set reversado = true, reversado_en = now()
                 where not ingreso.reversado""", nativeQuery = true)
-    int reversar(String tipo, UUID referenciaId, UUID sucursalId, BigDecimal monto, LocalDate fecha, String detalle);
+    int reversar(String tipo, String referenciaId, UUID sucursalId, BigDecimal monto, LocalDate fecha, String detalle);
 }

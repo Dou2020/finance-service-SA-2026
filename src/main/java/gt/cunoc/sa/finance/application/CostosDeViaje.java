@@ -51,9 +51,12 @@ public class CostosDeViaje {
             return;
         }
         ViajeFinalizado v = Payloads.leer(json, sobre, ViajeFinalizado.class);
-        Payloads.exigir(v.viajeId() != null && v.tipo() != null && v.sucursalId() != null && v.busId() != null
-                && v.placa() != null && v.choferId() != null && v.salarioBase() != null && v.kmInicial() != null
-                && v.kmFinal() != null && v.combustible() != null && v.llegada() != null, sobre, "datos del viaje");
+        Payloads.exigirId(v.viajeId(), sobre, "viajeId");
+        Payloads.exigirId(v.busId(), sobre, "busId");
+        Payloads.exigirId(v.choferId(), sobre, "choferId");
+        Payloads.exigir(v.tipo() != null && v.sucursalId() != null && v.placa() != null && v.salarioBase() != null
+                && v.kmInicial() != null && v.kmFinal() != null && v.combustible() != null && v.llegada() != null,
+                sobre, "datos del viaje");
         // La llegada es inmutable en trip: un dato así no se va a corregir con un reintento.
         Payloads.exigir(v.kmFinal() >= v.kmInicial(), sobre, "km final mayor o igual al inicial");
         Payloads.exigir(v.combustible().signum() >= 0 && v.salarioBase().signum() >= 0, sobre,

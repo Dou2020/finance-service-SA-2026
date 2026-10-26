@@ -3,7 +3,8 @@
 Referencia de cada endpoint: qué entra, qué sale, qué errores da (con el `detail` exacto que muestra el
 frontend) y qué efectos tiene. El resumen de una línea por endpoint está en el [README](README.md#endpoints);
 las reglas de negocio, en el [README del proyecto](../README.md). Las secciones [Llama a](#llama-a) y
-[Eventos que consume](#eventos-que-consume) son el contrato con fleet, trip y sales, que todavía no existen.
+[Eventos que consume](#eventos-que-consume) son el contrato que tienen que cumplir fleet, trip y sales: llegaron
+importados (2026-10-10) y todavía no lo cumplen. Sus ids son texto en finance (V3, 2026-10-25).
 
 | | URL base |
 |---|---|
@@ -59,6 +60,11 @@ finance (`403`).
 
 Como en identity ([Formatos](../identity-service/API.md#formatos)): JSON en UTF-8, ids UUID, instantes
 ISO-8601 en UTC, fechas de negocio `AAAA-MM-DD` ("hoy" en `America/Guatemala`) y montos como número JSON.
+
+**Ids de fleet, trip y sales: texto.** Esos servicios numeran con bigserial, así que el bus, el viaje, el
+chofer y la venta van como su id en texto (`"7"`, `"101"`), de hasta 64 caracteres; un número JSON también se
+acepta y se lee como su texto. Se guardan y se devuelven tal como llegaron (V3). Los ids de finance (gastos,
+categorías), de identity (sucursales, usuarios) y de customer (alquileres) siguen siendo UUID o enteros.
 La fecha del servicio de taller la elige el usuario, con hoy por defecto, y los reportes filtran por las
 fechas de negocio (pago, llegada, servicio), no por la del sistema (README del proyecto, "Fechas").
 
@@ -196,7 +202,7 @@ obligatoria. Los totales los calcula el sistema. No hay edición ni borrado: es 
 
 ```json
 {
-  "id": "a3f9…", "busId": "4c2d…", "placa": "P123BCD", "sucursalId": "1b4e…", "fechaServicio": "2026-09-30",
+  "id": "a3f9…", "busId": "7", "placa": "P123BCD", "sucursalId": "1b4e…", "fechaServicio": "2026-09-30",
   "totalManoObra": 350.00, "totalRepuestos": 1300.49, "total": 1650.49,
   "registradoPor": "0d3f…", "creadoEn": "2026-10-07T23:41:02.113Z",
   "lineas": [
@@ -217,7 +223,7 @@ la sucursal del admin.
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
-| `busId` | UUID | sí | un bus de su sucursal en fleet |
+| `busId` | string | sí | el id del bus en fleet como texto (`"7"`; un número JSON también entra); no vacío, hasta 64. Un bus de su sucursal |
 | `fechaServicio` | `AAAA-MM-DD` | no | hoy por defecto; no puede ser futura |
 | `lineas` | arreglo | sí | de 1 a 50 |
 | `lineas[].categoriaId` | entero | sí | una categoría activa |
@@ -227,7 +233,7 @@ la sucursal del admin.
 
 ```json
 {
-  "busId": "4c2d…", "fechaServicio": "2026-09-30",
+  "busId": "7", "fechaServicio": "2026-09-30",
   "lineas": [
     { "categoriaId": 1, "descripcion": "Cambio de 2 llantas", "tipo": "REPUESTO", "monto": 1200.50 },
     { "categoriaId": 1, "descripcion": "Montaje", "tipo": "MANO_DE_OBRA", "monto": 150 }
@@ -239,16 +245,18 @@ la sucursal del admin.
 
 | Estado | `detail` | Cuándo |
 |---|---|---|
-| `400` | `Hay datos inválidos en la solicitud`, con `errores.lineas` = `debe tener al menos una línea` o `errores['lineas[0].monto']` = `debe ser mayor que cero` · `debe tener a lo sumo 2 decimales` | Validación del body; no llama a fleet |
+| `400` | `Hay datos inválidos en la solicitud`, con `errores.busId` = `no debe estar vacío` · `el tamaño debe estar entre 0 y 64`, `errores.lineas` = `debe tener al menos una línea` o `errores['lineas[0].monto']` = `debe ser mayor que cero` · `debe tener a lo sumo 2 decimales` | Validación del body; no llama a fleet |
 | `403` | `No tienes permiso para esta acción` | El bus es de otra sucursal |
-| `404` (o el 4xx de fleet) | el `detail` que respondió fleet, por ejemplo `No existe ese bus` | fleet no conoce el bus |
+| `404` (o el 4xx de fleet) | el `detail` que respondió fleet, por ejemplo `No existe ese bus`; sin `detail`, `fleet respondió <estado>` | fleet no conoce el bus |
 | `409` | `Tu sucursal todavía no está disponible en finanzas. Intenta de nuevo en unos minutos` | Sin su E1 todavía |
 | `422` | `La fecha del servicio no puede ser posterior a hoy` | |
 | `422` | `No existe la categoría <id>` · `La categoría <nombre> está desactivada` | |
 | `503` | `El servicio no está disponible en este momento. Intenta de nuevo en unos minutos` | fleet caído, lento (más de 2 s, con un reintento) o con el circuito abierto |
 
-**Efectos:** ninguno fuera de finance. Con un `4xx` o un `503` no se guarda nada. Las categorías del gasto
-quedan bloqueadas (`FOR SHARE`) hasta que se confirma: un borrado o una desactivación simultánea espera.
+**Efectos:** ninguno fuera de finance. Con un `4xx` o un `503` no se guarda nada. El `busId` se le
+consulta a fleet sin los espacios de los extremos, y se guarda el `id` que fleet respondió. Las categorías
+del gasto quedan bloqueadas (`FOR SHARE`) hasta que se confirma: un borrado o una desactivación simultánea
+espera.
 
 ### `GET /api/gastos-taller`
 
@@ -257,7 +265,7 @@ quedan bloqueadas (`FOR SHARE`) hasta que se confirma: un borrado o una desactiv
 | Query | Tipo | Descripción |
 |---|---|---|
 | `sucursalId` | UUID | opcional, solo `SYS_ADMIN` |
-| `busId` | UUID | opcional |
+| `busId` | string | opcional: el id de fleet como texto (`7`); vacío es sin filtro |
 | `desde`, `hasta` | `AAAA-MM-DD` | opcionales, sobre `fechaServicio` |
 | `page`, `size`, `sort` | | por defecto `fechaServicio,desc` y `creadoEn,desc` |
 
@@ -266,7 +274,7 @@ quedan bloqueadas (`FOR SHARE`) hasta que se confirma: un borrado o una desactiv
 ```json
 {
   "content": [
-    { "id": "a3f9…", "busId": "4c2d…", "placa": "P123BCD", "sucursalId": "1b4e…",
+    { "id": "a3f9…", "busId": "7", "placa": "P123BCD", "sucursalId": "1b4e…",
       "fechaServicio": "2026-09-30", "totalManoObra": 350.00, "totalRepuestos": 1300.49, "total": 1650.49,
       "creadoEn": "2026-10-07T23:41:02.113Z" }
   ],
@@ -293,7 +301,7 @@ pida la que pida; el campo `sucursalId` de la respuesta dice cuál se usó). `CA
 |---|---|---|
 | `desde`, `hasta` | `AAAA-MM-DD` | opcionales e inclusivos, sobre la fecha de negocio; sin ellos, todos los registros. `400` si `desde` > `hasta` |
 | `sucursalId` | UUID | opcional, solo `SYS_ADMIN` |
-| `busId` | UUID | opcional, solo en los dos de taller |
+| `busId` | string | opcional, solo en los dos de taller: el id de fleet como texto (`7`); vacío es sin filtro |
 
 Las sucursales van en orden alfabético en español ("Ávila" antes que "Barberena"), con el nombre de la
 réplica que finance arma con E1. Los montos agrupados usan dos objetos:
@@ -331,7 +339,8 @@ sucursales con ingresos en el período.
 }
 ```
 
-`referenciaId` es la venta (sales) o el alquiler (customer) de origen.
+`referenciaId` es la venta (sales) o el alquiler (customer) de origen, como texto: el `ventaId` tal como
+llegó en E11 (su número o un UUID) o el UUID del alquiler.
 
 ### `GET /api/finanzas/reportes/gastos`
 
@@ -346,7 +355,7 @@ servicio), en orden de fecha, con el subtotal por concepto de cada sucursal y lo
     {
       "sucursalId": "1b4e…", "nombre": "Quetzaltenango",
       "filas": [
-        { "fecha": "2026-09-10", "origen": "VIAJE", "referenciaId": "77b1…", "placa": "P777AAA",
+        { "fecha": "2026-09-10", "origen": "VIAJE", "referenciaId": "101", "placa": "P777AAA",
           "detalle": "Viaje regular · 250 km",
           "costos": { "combustible": 850.75, "depreciacion": 375.00, "salarios": 300.00, "manoDeObra": 0,
                       "repuestos": 0, "total": 1525.75 } },
@@ -363,7 +372,8 @@ servicio), en orden de fecha, con el subtotal por concepto de cada sucursal y lo
 }
 ```
 
-`origen` es `VIAJE` (`referenciaId` = el viaje en trip) o `TALLER` (el gasto de taller).
+`origen` es `VIAJE` (`referenciaId` = el id del viaje en trip, como texto) o `TALLER` (el UUID del gasto de
+taller).
 
 ### `GET /api/finanzas/reportes/ganancias`
 
@@ -415,7 +425,7 @@ ejemplo) es candidato a desactivarse. Filtros opcionales `sucursalId` y `busId`.
 {
   "desde": "2026-09-01", "hasta": "2026-09-30", "sucursalId": "1b4e…", "busId": null,
   "buses": [
-    { "busId": "4c2d…", "placa": "P123BCD", "sucursal": "Quetzaltenango", "gastos": 2,
+    { "busId": "7", "placa": "P123BCD", "sucursal": "Quetzaltenango", "gastos": 2,
       "categorias": [
         { "nombre": "Frenos", "manoDeObra": 450.00, "repuestos": 0, "subtotal": 450.00 },
         { "nombre": "Llantas", "manoDeObra": 0, "repuestos": 1200.00, "subtotal": 1200.00 }
@@ -438,7 +448,7 @@ la acumulada no es `kmRecorridos × tarifaVigente`. Solo aparecen buses con viaj
   "desde": null, "hasta": null, "sucursalId": "1b4e…",
   "tarifaVigente": 1.5000, "tarifaVigenteDesde": "2026-01-01",
   "buses": [
-    { "busId": "4c2d…", "placa": "P777AAA", "sucursal": "Quetzaltenango", "viajes": 1, "kmRecorridos": 250,
+    { "busId": "12", "placa": "P777AAA", "sucursal": "Quetzaltenango", "viajes": 1, "kmRecorridos": 250,
       "depreciacion": 375.00 }
   ],
   "viajes": 1, "kmRecorridos": 250, "depreciacion": 375.00
@@ -462,10 +472,10 @@ la que fallaron. Los casos típicos en finance: un ingreso o un costo de una suc
 replicada, o un viaje sin tarifa de depreciación vigente a su fecha de llegada ([Eventos que
 consume](#eventos-que-consume)).
 
-**Llama:** el operador, desde el servidor. Sin body.
+**Llama:** el operador, desde el servidor (en `finance-service/`). Sin body.
 
 ```bash
-./stack.sh compose finance-service exec finance-service curl -s -X POST localhost:8086/internal/dlq/reprocesar
+docker compose exec finance-service curl -s -X POST localhost:8086/internal/dlq/reprocesar
 ```
 
 **`200`**:
@@ -489,16 +499,22 @@ consume](#eventos-que-consume)).
 
 ### S6 `GET /internal/buses/{id}` en fleet
 
-Al registrar un gasto de taller. fleet todavía no existe: este es el contrato mínimo que tiene que cumplir.
+Al registrar un gasto de taller. Es el contrato mínimo que fleet tiene que cumplir: el fleet importado
+todavía no expone ninguna ruta `/internal/**` (llega en la ola 2 del plan de eventos).
+
+`{id}` es el id del bus en fleet como texto (`GET /internal/buses/7`), el que mandó el frontend en `busId`.
+Va como variable de la plantilla, así que se codifica entero: una `/` sale como `%2F` y no cambia la ruta.
+finance lo busca en `FLEET_URL`: `http://fleet-service:8084` en su compose y `http://localhost:8084` fuera de
+Docker (8084 es el puerto del fleet importado; el 8082 del diseño lo usa trip).
 
 | Respuesta | finance hace |
 |---|---|
-| `200 {id, placa, sucursalId, estado}` | Compara `sucursalId` con la del admin (`403` si es otra) y guarda `placa` y `sucursalId` en el gasto. `estado` no se valida: un gasto se registra en cualquier estado del bus |
-| `4xx` (`ProblemDetail`) | Responde el mismo estado con el `detail` de fleet. No se reintenta ni abre el circuito: es la respuesta de un servicio sano |
-| `5xx`, sin conexión, más de 2 s, o un `200` sin `placa` o `sucursalId` | Un reintento a los 300 ms y luego `503` |
+| `200 {id, placa, sucursalId, estado}` | Compara `sucursalId` con la del admin (`403` si es otra) y guarda `id`, `placa` y `sucursalId` en el gasto. `id` puede venir como número JSON (el `Long` de fleet): se guarda como su texto. `sucursalId` es el UUID de identity y `placa` tiene hasta 20 caracteres. `estado` no se valida: un gasto se registra en cualquier estado del bus |
+| `4xx` (`ProblemDetail`) | Responde el mismo estado con el `detail` de fleet; sin `detail` (como el `{timestamp, status, message}` de los errores de fleet hoy), con `fleet respondió <estado>`. No se reintenta ni abre el circuito: es la respuesta de un servicio sano |
+| `5xx`, sin conexión, más de 2 s, o un `200` sin `id`, `placa` o `sucursalId` (o con un `sucursalId` que no es UUID) | Un reintento a los 300 ms y luego `503` |
 
 ```json
-{ "id": "4c2d…", "placa": "P123BCD", "sucursalId": "1b4e…", "estado": "DISPONIBLE" }
+{ "id": 7, "placa": "P123BCD", "sucursalId": "1b4e…", "estado": "DISPONIBLE" }
 ```
 
 Resilience4j, instancia `fleet` (`application.yml`): conexión 1 s, respuesta 2 s, 2 intentos; el circuito
@@ -513,22 +529,45 @@ finance.
 finance no publica eventos (no tiene outbox). Cada evento se aplica en una transacción con su inbox
 (`processed_event`): uno repetido no tiene efecto. Los errores transitorios (la base) se reintentan a 1, 2,
 4 y 8 s y después van a la DLQ. Lo que nunca va a funcionar va directo a la DLQ, sin reintentos: payload
-ilegible, dato obligatorio que falta, o una réplica que finance no tiene (la sucursal del ingreso o del
-costo, o la tarifa de depreciación vigente a la fecha de llegada). Lo último no se reintenta porque el E1 o
-el E2 que faltan, si vienen detrás en la misma cola, no se procesan mientras tanto; se arregla la causa y se
-[reprocesa la DLQ](#post-internaldlqreprocesar).
+ilegible, dato obligatorio que falta, un id vacío o de más de 64 caracteres, o una réplica que finance no
+tiene (la sucursal del ingreso o del costo, o la tarifa de depreciación vigente a la fecha de llegada). Lo
+último no se reintenta porque el E1 o el E2 que faltan, si vienen detrás en la misma cola, no se procesan
+mientras tanto; se arregla la causa y se [reprocesa la DLQ](#post-internaldlqreprocesar).
 
-Los productores que todavía no existen (trip, sales) tienen que publicar **al menos** estos campos:
+**Ids de fleet, trip y sales: texto.** `viajeId`, `busId` y `choferId` (E9) y `ventaId` y `viajeId` (E11 y
+E12) son el id del productor tal cual, como texto (`"101"`): trip, fleet y sales numeran con bigserial. Un
+número JSON (`101`) también se acepta y se guarda como su texto; un UUID en texto, también. Tienen que ser
+no vacíos y de hasta 64 caracteres; si no, el evento va directo a la DLQ. Se guardan sin normalizar: el
+productor tiene que mandar siempre el mismo texto para el mismo agregado (el E12 encuentra su E11 por
+`ventaId`). `sucursalId` (identity) y `alquilerId` (customer) siguen siendo UUID: uno que no lo es deja el
+payload ilegible y el evento va a la DLQ.
+
+trip y sales (importados) todavía no publican en `transporte.events`; tienen que publicar **al menos** estos
+campos:
 
 | Evento | Payload que finance lee | Qué hace |
 |---|---|---|
 | E1 `identity.sucursal.guardada` | `{sucursalId, nombre, activa}`; `aggregateVersion` = versión de la sucursal | Inserta o actualiza la réplica. Una versión igual o más vieja que la guardada se descarta |
 | E2 `identity.configuracion.actualizada` | `{tarifaId, tipo, valor, vigenteDesde}` | Guarda la versión de `DEPRECIACION_KM` con el id de identity; descarta las de alquiler |
-| E9 `trip.viaje.finalizado` | `{viajeId, tipo, sucursalId, busId, placa, choferId, salarioBase, kmInicial, kmFinal, combustible, llegada}`. `tipo` es `REGULAR` o `ALQUILER`; `sucursalId`, la de origen de la ruta o la que atiende el alquiler; `salarioBase`, el snapshot de la asignación; `llegada`, el instante real que eligió el usuario | Costo del viaje con fecha = la de `llegada` en Guatemala: km = final − inicial, depreciación = km × tarifa vigente a esa fecha, salario = base (× 1.15 en `ALQUILER`), a 2 decimales. Guarda la tarifa aplicada. Un `viajeId` ya registrado se descarta. `kmFinal` < `kmInicial` o montos negativos → DLQ |
-| E11 `sales.boletos.vendidos` | Lo que lee customer **más `sucursalId`**: `{ventaId, sucursalId, canal, viajeId, origen, destino, salida, asientos, total, fechaPago}`; `sucursalId` es la de origen de la ruta | Ingreso `BOLETO` por `total` en `fechaPago`. Si ya existe (o su lápida), no cambia |
+| E9 `trip.viaje.finalizado` | `{viajeId, tipo, sucursalId, busId, placa, choferId, salarioBase, kmInicial, kmFinal, combustible, llegada}`. `viajeId`, `busId` y `choferId`, texto; `tipo` es `REGULAR` o `ALQUILER`; `sucursalId`, la de origen de la ruta o la que atiende el alquiler; `placa`, hasta 20; `salarioBase`, el snapshot de la asignación; `kmInicial` y `kmFinal`, enteros; `llegada`, el instante real que eligió el usuario. `alquilerId`, si viene, es el UUID de customer o `null`: finance no lo usa | Costo del viaje con fecha = la de `llegada` en Guatemala: km = final − inicial, depreciación = km × tarifa vigente a esa fecha, salario = base (× 1.15 en `ALQUILER`), a 2 decimales. Guarda la tarifa aplicada. Un `viajeId` ya registrado se descarta. `kmFinal` < `kmInicial` o montos negativos → DLQ |
+| E11 `sales.boletos.vendidos` | Lo que lee customer **más `sucursalId`**: `{ventaId, sucursalId, canal, viajeId, origen, destino, salida, asientos, total, fechaPago}`; `ventaId` y `viajeId`, texto; `sucursalId` es la de origen de la ruta | Ingreso `BOLETO` por `total` en `fechaPago`, con `ventaId` de referencia. Si ya existe (o su lápida), no cambia |
 | E12 `sales.boletos.anulados` | Los mismos de E11 y `motivo` | Marca el ingreso reversado (el monto no cambia). Si no existe, deja la **lápida**: el ingreso ya reversado con estos datos, así un E11 tardío no cuenta. Pasa cuando sales anula una venta antes de confirmarla, o cuando un E11 se reprocesa desde la DLQ después de su E12 |
 | E14 `customer.alquiler.pagado` | `{alquilerId, sucursalId, nombre, origen, destino, fechaSalida, monto, fechaPago}` | Ingreso `ALQUILER` por `monto` en `fechaPago` en la sucursal que lo atiende |
 | E16 `customer.alquiler.cancelado` | `{alquilerId, sucursalId, nombre, estabaPagado, monto, fechaPago}` | Con `estabaPagado`, reversa el ingreso (o deja la lápida), sea el reembolso a la cartera o en caja. Sin pagar, no toca el libro |
+
+Payloads de ejemplo de E9 y E11 con los ids numéricos de trip, fleet y sales (los campos de más se ignoran):
+
+```json
+{ "viajeId": "101", "tipo": "REGULAR", "alquilerId": null, "sucursalId": "1b4e…", "busId": "7",
+  "placa": "P777AAA", "choferId": "3", "salarioBase": 300.00, "kmInicial": 12000, "kmFinal": 12250,
+  "combustible": 850.75, "llegada": "2026-09-10T20:00:00Z" }
+```
+
+```json
+{ "ventaId": "5012", "sucursalId": "1b4e…", "canal": "PRESENCIAL", "viajeId": "101",
+  "origen": "Quetzaltenango", "destino": "San Marcos", "salida": "2026-10-20T14:00:00Z", "asientos": [4, 5],
+  "total": 150.00, "fechaPago": "2026-10-05" }
+```
 
 ---
 

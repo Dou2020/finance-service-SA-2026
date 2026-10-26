@@ -15,7 +15,7 @@ public record ReporteTallerPorCategoriaResponse(
         LocalDate desde,
         LocalDate hasta,
         UUID sucursalId,
-        UUID busId,
+        String busId,
         List<Categoria> categorias,
         BigDecimal granTotal) {
 

@@ -35,8 +35,9 @@ public class IngresoEntity {
     @Column(nullable = false, length = 10)
     private TipoIngreso tipo;
 
-    @Column(name = "referencia_id", nullable = false)
-    private UUID referenciaId;
+    /** La venta de sales (su id como texto) o el alquiler de customer (su UUID como texto). */
+    @Column(name = "referencia_id", nullable = false, length = 64)
+    private String referenciaId;
 
     @Column(name = "sucursal_id", nullable = false)
     private UUID sucursalId;
@@ -70,7 +71,7 @@ public class IngresoEntity {
         return tipo;
     }
 
-    public UUID getReferenciaId() {
+    public String getReferenciaId() {
         return referenciaId;
     }
 
