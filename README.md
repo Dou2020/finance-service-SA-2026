@@ -49,9 +49,11 @@ finance-service/
 ├── pom.xml                                Boot 3.5.16, finalName app; web, JPA, Flyway, Security, AMQP, springdoc, Resilience4j
 ├── Dockerfile                             dos etapas: Maven compila, JRE 21 corre target/app.jar
 ├── docker-compose.yml                     proyecto Compose propio: finance-db (red privada) + el servicio (también en transporte)
-├── .dockerignore                          deja target/, .env y archivos del IDE fuera de la imagen
+├── .dockerignore                          deja target/, los .env (menos .env.example) y archivos del IDE fuera de la imagen
 ├── .gitignore                             lo que no se versiona: target/, .env (no .env.example), logs, IDE y SO
 ├── .env.example                           variables de su compose (su base y RabbitMQ); se copia a .env, que no se versiona
+├── .github/workflows/
+│   └── ci-cd.yml                          pruebas en dev y main; en main, sube el código a la VM por SSH y la compila y levanta allá (README raíz, "Pipeline de identity, customer y finance")
 ├── README.md                              estructura y endpoints (este archivo)
 ├── API.md                                 cada endpoint en detalle, la llamada a fleet y el contrato de los eventos que consume
 └── src/
